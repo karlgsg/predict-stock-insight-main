@@ -47,6 +47,7 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
   const [suggestions, setSuggestions] = useState<SymbolResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef<number | null>(null);
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
 
   // Mock stock data for demo (in real app, this would call an API)
   const mockStockData: Record<string, StockResult> = {
@@ -131,17 +132,22 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
     },
   });
 
-  const handleSearch = () => {
-    if (!searchTicker.trim()) return;
+  const handleSearch = (ticker?: string) => {
+    const target = (ticker || selectedSymbol || "").trim();
+    if (!target) {
+      setStatusMessage("Please select a ticker from the list.");
+      return;
+    }
     setStockResult(null);
     setStatusMessage(null);
-    predictionMutation.mutate(searchTicker);
+    predictionMutation.mutate(target.toUpperCase());
   };
 
   const handleSymbolSelect = (symbol: string) => {
     setSearchTicker(symbol.toUpperCase());
     setShowSuggestions(false);
-    handleSearch();
+    setSelectedSymbol(symbol.toUpperCase());
+    handleSearch(symbol);
   };
 
   useEffect(() => {
@@ -254,7 +260,10 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
               <Input
                 placeholder="Enter ticker (e.g., AAPL, TSLA, NVDA)"
                 value={searchTicker}
-                onChange={(e) => setSearchTicker(e.target.value.toUpperCase())}
+                onChange={(e) => {
+                  setSearchTicker(e.target.value.toUpperCase());
+                  setSelectedSymbol(null);
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 className="glass-card border-white/20"
                 onFocus={() => suggestions.length && setShowSuggestions(true)}

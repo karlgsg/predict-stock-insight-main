@@ -166,8 +166,11 @@ app.post("/predict", authMiddleware, (req, res) => {
   if (!ticker) return res.status(400).json({ error: "Ticker is required." });
 
   // Placeholder prediction (replace with ML model later)
+  // Reload symbols in case the file was refreshed after server start.
+  symbols = loadSymbols();
   const symbol = String(ticker).toUpperCase();
-  if (!symbols.find((s) => s.symbol === symbol)) {
+  const symbolEntry = symbols.find((s) => s.symbol === symbol);
+  if (!symbolEntry) {
     return res.status(400).json({ error: "Unknown ticker. Please pick a valid symbol." });
   }
 
@@ -179,7 +182,7 @@ app.post("/predict", authMiddleware, (req, res) => {
 
   return res.json({
     symbol,
-    name: `${symbol} Company`,
+    name: symbolEntry?.name || `${symbol} Company`,
     price: Number(price.toFixed(2)),
     change: Number(change.toFixed(2)),
     changePercent: Number(changePercent.toFixed(2)),
