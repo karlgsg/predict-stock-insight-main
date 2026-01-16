@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { PrismaClient } from "@prisma/client";
 
 const app = express();
 app.use(cors());
@@ -14,9 +15,13 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 8000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
+const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || "15m"; // e.g., "15m"
+const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.REFRESH_TOKEN_TTL_DAYS || "7", 10);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const symbolsPath = path.resolve(__dirname, "../data/symbols.json");
+
+const prisma = new PrismaClient();
 
 function loadSymbols() {
   try {
@@ -31,12 +36,52 @@ function loadSymbols() {
 let symbols = loadSymbols();
 
 // In-memory user store: email -> { id, name, email, passwordHash }
-const users = new Map();
-
-function signToken(user) {
+function signAccessToken(user) {
   return jwt.sign({ sub: user.id, email: user.email, name: user.name }, JWT_SECRET, {
-    expiresIn: "1h",
+    expiresIn: ACCESS_TOKEN_TTL,
   });
+}
+
+async function createRefreshToken(userId) {
+  const token = nanoid(32);
+  const tokenHash = await bcrypt.hash(token, 10);
+  const expires = new Date();
+  expires.setDate(expires.getDate() + REFRESH_TOKEN_TTL_DAYS);
+  await prisma.refreshToken.create({
+    data: {
+      tokenHash,
+      userId,
+      expiresAt: expires,
+    },
+  });
+  return token;
+}
+
+async function rotateRefreshToken(oldToken, userId) {
+  const tokenHash = await bcrypt.hash(oldToken, 10);
+  await prisma.refreshToken.updateMany({
+    where: { userId, tokenHash },
+    data: { revoked: true },
+  });
+  return createRefreshToken(userId);
+}
+
+async function verifyRefreshToken(token) {
+  const tokens = await prisma.refreshToken.findMany({
+    where: {
+      revoked: false,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  for (const t of tokens) {
+    const match = await bcrypt.compare(token, t.tokenHash);
+    if (match) {
+      return t;
+    }
+  }
+  return null;
 }
 
 function authMiddleware(req, res, next) {
@@ -59,14 +104,18 @@ app.post("/auth/register", async (req, res) => {
   if (!name || !email || !password) {
     return res.status(400).json({ error: "Name, email, and password are required." });
   }
-  if (users.has(email.toLowerCase())) {
+  const lowerEmail = email.toLowerCase();
+  const existing = await prisma.user.findUnique({ where: { email: lowerEmail } });
+  if (existing) {
     return res.status(409).json({ error: "User already exists." });
   }
   const passwordHash = await bcrypt.hash(password, 10);
-  const user = { id: nanoid(), name, email: email.toLowerCase(), passwordHash };
-  users.set(user.email, user);
-  const token = signToken(user);
-  return res.json({ token, user: { name: user.name, email: user.email } });
+  const user = await prisma.user.create({
+    data: { name, email: lowerEmail, passwordHash },
+  });
+  const accessToken = signAccessToken(user);
+  const refreshToken = await createRefreshToken(user.id);
+  return res.json({ token: accessToken, refreshToken, user: { name: user.name, email: user.email } });
 });
 
 app.post("/auth/login", async (req, res) => {
@@ -74,7 +123,7 @@ app.post("/auth/login", async (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ error: "Email and password are required." });
   }
-  const user = users.get(email.toLowerCase());
+  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   if (!user) {
     return res.status(401).json({ error: "Invalid credentials." });
   }
@@ -82,8 +131,34 @@ app.post("/auth/login", async (req, res) => {
   if (!ok) {
     return res.status(401).json({ error: "Invalid credentials." });
   }
-  const token = signToken(user);
-  return res.json({ token, user: { name: user.name, email: user.email } });
+  const accessToken = signAccessToken(user);
+  const refreshToken = await createRefreshToken(user.id);
+  return res.json({ token: accessToken, refreshToken, user: { name: user.name, email: user.email } });
+});
+
+app.post("/auth/refresh", async (req, res) => {
+  const { refreshToken } = req.body || {};
+  if (!refreshToken) {
+    return res.status(400).json({ error: "Refresh token is required." });
+  }
+  const stored = await verifyRefreshToken(refreshToken);
+  if (!stored) {
+    return res.status(401).json({ error: "Invalid or expired refresh token." });
+  }
+  if (stored.expiresAt < new Date() || stored.revoked) {
+    return res.status(401).json({ error: "Expired or revoked refresh token." });
+  }
+  const user = await prisma.user.findUnique({ where: { id: stored.userId } });
+  if (!user) {
+    return res.status(401).json({ error: "User not found." });
+  }
+  await prisma.refreshToken.update({
+    where: { id: stored.id },
+    data: { revoked: true },
+  });
+  const accessToken = signAccessToken(user);
+  const newRefresh = await createRefreshToken(user.id);
+  return res.json({ token: accessToken, refreshToken: newRefresh, user: { name: user.name, email: user.email } });
 });
 
 app.post("/predict", authMiddleware, (req, res) => {

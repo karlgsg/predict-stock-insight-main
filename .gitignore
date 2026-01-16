@@ -14,6 +14,7 @@ dist-ssr
 /server/node_modules
 /server/.env
 /server/data/symbols.json
+/server/prisma/dev.db
 
 # Editor directories and files
 .vscode/*
