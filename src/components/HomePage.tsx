@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ApiError, fetchStockPrediction, isApiConfigured, type StockPredictionResponse } from "@/lib/api";
+import { fetchSymbols, type SymbolResult } from "@/lib/symbols";
 import { 
   Search, 
   TrendingUp, 
@@ -43,6 +44,9 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
   const [searchTicker, setSearchTicker] = useState("");
   const [stockResult, setStockResult] = useState<StockResult | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<SymbolResult[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const debounceRef = useRef<number | null>(null);
 
   // Mock stock data for demo (in real app, this would call an API)
   const mockStockData: Record<string, StockResult> = {
@@ -134,6 +138,36 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
     predictionMutation.mutate(searchTicker);
   };
 
+  const handleSymbolSelect = (symbol: string) => {
+    setSearchTicker(symbol.toUpperCase());
+    setShowSuggestions(false);
+    handleSearch();
+  };
+
+  useEffect(() => {
+    if (!isApiConfigured()) return;
+    const query = searchTicker.trim();
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    if (!query) {
+      setSuggestions([]);
+      return;
+    }
+    debounceRef.current = window.setTimeout(async () => {
+      try {
+        const results = await fetchSymbols(query, 8);
+        setSuggestions(results);
+        setShowSuggestions(true);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 250);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchTicker]);
+
   const getPredictionColor = (prediction: string) => {
     switch (prediction) {
       case "bullish": return "text-profit";
@@ -223,6 +257,7 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
                 onChange={(e) => setSearchTicker(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 className="glass-card border-white/20"
+                onFocus={() => suggestions.length && setShowSuggestions(true)}
               />
               <Button 
                 onClick={handleSearch} 
@@ -232,6 +267,23 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
                 {predictionMutation.isPending ? "Analyzing..." : "Search"}
               </Button>
             </div>
+
+            {showSuggestions && suggestions.length > 0 && (
+              <Card className="glass-card border-white/10">
+                <CardContent className="p-2 space-y-1 max-h-60 overflow-auto">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.symbol}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-white/10"
+                      onClick={() => handleSymbolSelect(s.symbol)}
+                    >
+                      <span className="font-semibold">{s.symbol}</span>
+                      <span className="text-sm text-muted-foreground ml-2">{s.name}</span>
+                    </button>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
 
             {!isApiConfigured() && (
               <p className="text-sm text-muted-foreground">

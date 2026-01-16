@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "symbols:refresh": "node scripts/fetch-symbols.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
