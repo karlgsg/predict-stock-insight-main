@@ -33,6 +33,6 @@ This project is built with:
   - `POST /auth/register { name, email, password }` → `{ token, user }`
   - `POST /auth/login { email, password }` → `{ token, user }`
   - `POST /predict { ticker }` (requires `Authorization: Bearer <token>`) → mock prediction payload matching the frontend shape (replace with ML model later).
-
-
+  - `GET /symbols?q=tes&limit=10` → search or list stock symbols/names (static sample list in `server/data/symbols.json`).
+- Refresh symbols from Polygon: set `POLYGON_API_KEY` in `server/.env`, then run `cd server && npm run symbols:refresh` to pull active US stock tickers into `server/data/symbols.json` (pagination capped by `MAX_PAGES` in `scripts/fetch-symbols.js`).
 
