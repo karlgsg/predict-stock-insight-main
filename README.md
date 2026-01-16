@@ -27,10 +27,10 @@ This project is built with:
 ## Local API server (Express + JWT)
 
 - Server lives in `server/`. Install deps with `cd server && npm install`.
-- Start dev server: `cd server && npm run dev` (defaults to `http://localhost:8000`). Copy `server/.env.example` to `server/.env` and set `JWT_SECRET`/`PORT` as needed.
+- Start dev server: `cd server && npm run dev` (defaults to `http://localhost:8001`). Copy `server/.env.example` to `server/.env` and set `JWT_SECRET`/`PORT` as needed.
 - Database: Prisma + SQLite (`DATABASE_URL` in `server/.env`, default `file:./prisma/dev.db`). Run `cd server && npx prisma generate` if you change the schema.
 - Auth now issues access + refresh tokens: access token TTL defaults to 15m (`ACCESS_TOKEN_TTL`), refresh token TTL 7 days (`REFRESH_TOKEN_TTL_DAYS`). `POST /auth/refresh` rotates refresh tokens.
-- Set `VITE_API_URL=http://localhost:8000` in the frontend `.env` to use it.
+- Set `VITE_API_URL=http://localhost:8001` in the frontend `.env` to use it (or match your chosen API port).
 - Endpoints:
   - `POST /auth/register { name, email, password }` → `{ token, user }`
   - `POST /auth/login { email, password }` → `{ token, user }`

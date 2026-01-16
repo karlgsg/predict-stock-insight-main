@@ -207,6 +207,6 @@ app.get("/symbols", (_req, res) => {
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
-app.listen(PORT, () => {
+app.listen(PORT, "127.0.0.1", () => {
   console.log(`API server listening on http://localhost:${PORT}`);
 });
