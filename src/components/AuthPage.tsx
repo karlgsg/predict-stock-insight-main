@@ -1,10 +1,11 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Eye, EyeOff, TrendingUp } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, TrendingUp } from "lucide-react";
 import { login, register } from "@/lib/api";
 
 interface AuthPageProps {
@@ -12,6 +13,7 @@ interface AuthPageProps {
 }
 
 const AuthPage = ({ onAuth }: AuthPageProps) => {
+  const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -50,7 +52,19 @@ const AuthPage = ({ onAuth }: AuthPageProps) => {
 
   return (
     <div className="min-h-screen gradient-hero flex items-center justify-center p-4">
-      <div className="w-full max-w-md animate-fade-in">
+      <div className={`w-full ${isLogin ? "max-w-md" : "max-w-4xl"} animate-fade-in`}>
+        <div className="mb-4">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="gap-2 text-muted-foreground hover:text-primary"
+            onClick={() => navigate("/")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+        </div>
         {/* App Logo & Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 gradient-primary rounded-2xl mb-4">
@@ -78,96 +92,193 @@ const AuthPage = ({ onAuth }: AuthPageProps) => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {!isLogin && (
-                <div className="space-y-2">
-                  <Label htmlFor="name">Full Name</Label>
-                  <Input
-                    id="name"
-                    type="text"
-                    placeholder="Enter your full name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required={!isLogin}
-                    className="glass-card border-white/20"
-                  />
-                </div>
-              )}
-              
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                  className="glass-card border-white/20"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter your password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    required
-                    className="glass-card border-white/20 pr-10"
-                  />
+            {isLogin ? (
+              <div>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="Enter your email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      required
+                      className="glass-card border-white/20"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter your password"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        required
+                        className="glass-card border-white/20 pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {errorMessage && (
+                    <p className="text-sm text-destructive text-center">{errorMessage}</p>
+                  )}
+
+                  <Button 
+                    type="submit" 
+                    variant="gradient" 
+                    className="w-full" 
+                    size="lg"
+                    disabled={authMutation.isPending}
+                  >
+                    {authMutation.isPending ? "Signing in..." : "Sign In"}
+                  </Button>
+                </form>
+
+                <div className="mt-6 text-center">
                   <Button
                     type="button"
                     variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                    onClick={() => setShowPassword(!showPassword)}
+                    onClick={() => {
+                      setIsLogin(false);
+                      setErrorMessage(null);
+                    }}
+                    className="text-sm hover:text-primary"
                   >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <Eye className="h-4 w-4 text-muted-foreground" />
-                    )}
+                    Don't have an account? Sign up
                   </Button>
                 </div>
               </div>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2 items-start">
+                <div className="space-y-4">
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Full Name</Label>
+                      <Input
+                        id="name"
+                        type="text"
+                        placeholder="Enter your full name"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        required
+                        className="glass-card border-white/20"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        placeholder="Enter your email"
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        required
+                        className="glass-card border-white/20"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="password">Password</Label>
+                      <div className="relative">
+                        <Input
+                          id="password"
+                          type={showPassword ? "text" : "password"}
+                          placeholder="Enter your password"
+                          value={formData.password}
+                          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                          required
+                          className="glass-card border-white/20 pr-10"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                          onClick={() => setShowPassword(!showPassword)}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <Eye className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
 
-              {errorMessage && (
-                <p className="text-sm text-destructive text-center">{errorMessage}</p>
-              )}
+                    {errorMessage && (
+                      <p className="text-sm text-destructive text-center">{errorMessage}</p>
+                    )}
 
-              <Button 
-                type="submit" 
-                variant="gradient" 
-                className="w-full" 
-                size="lg"
-                disabled={authMutation.isPending}
-              >
-                {authMutation.isPending
-                  ? (isLogin ? "Signing in..." : "Creating account...")
-                  : (isLogin ? "Sign In" : "Create Account")}
-              </Button>
-            </form>
+                    <Button 
+                      type="submit" 
+                      variant="gradient" 
+                      className="w-full" 
+                      size="lg"
+                      disabled={authMutation.isPending}
+                    >
+                      {authMutation.isPending ? "Creating account..." : "Create Account"}
+                    </Button>
+                  </form>
 
-            <div className="mt-6 text-center">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setIsLogin(!isLogin);
-                  setErrorMessage(null);
-                }}
-                className="text-sm hover:text-primary"
-              >
-                {isLogin 
-                  ? "Don't have an account? Sign up" 
-                  : "Already have an account? Sign in"
-                }
-              </Button>
-            </div>
+                  <div className="text-center">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setIsLogin(true);
+                        setErrorMessage(null);
+                      }}
+                      className="text-sm hover:text-primary"
+                    >
+                      Already have an account? Sign in
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="glass-card border-white/10 p-5 space-y-3 md:mt-1">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                    Included in Free
+                  </div>
+                  <h3 className="text-xl font-semibold">What you get</h3>
+                  <ul className="space-y-3 text-sm text-muted-foreground">
+                    <li className="flex items-start gap-3">
+                      <span className="mt-1 h-2.5 w-2.5 rounded-full bg-primary" />
+                      Real-time symbol search plus instant mock predictions to explore ideas.
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="mt-1 h-2.5 w-2.5 rounded-full bg-primary" />
+                      Curated watchlist with sentiment insights to track movers.
+                    </li>
+                    <li className="flex items-start gap-3">
+                      <span className="mt-1 h-2.5 w-2.5 rounded-full bg-primary" />
+                      Secure sessions with rotating refresh tokens so you stay signed in.
+                    </li>
+                  </ul>
+                  <div className="pt-3 border-t border-white/5 text-sm text-muted-foreground">
+                    Looking for more advanced features?{" "}
+                    <span className="text-primary font-semibold">Check our premium plans.</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
