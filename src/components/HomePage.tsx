@@ -18,6 +18,7 @@ import {
   BarChart3,
   LogOut
 } from "lucide-react";
+import PortfolioSection from "./PortfolioSection";
 
 interface User {
   name: string;
@@ -269,7 +270,7 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
                 onFocus={() => suggestions.length && setShowSuggestions(true)}
               />
               <Button 
-                onClick={handleSearch} 
+                onClick={() => handleSearch()} 
                 variant="gradient"
                 disabled={predictionMutation.isPending || !searchTicker.trim()}
               >
@@ -344,6 +345,9 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
             )}
           </CardContent>
         </Card>
+
+        {/* Portfolio */}
+        <PortfolioSection userEmail={user.email} />
 
         {/* Risk Categories */}
         <Card className="glass-card border-white/10 animate-slide-up">
