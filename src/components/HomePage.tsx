@@ -49,6 +49,8 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef<number | null>(null);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+  const [suppressSuggestions, setSuppressSuggestions] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
 
   // Mock stock data for demo (in real app, this would call an API)
   const mockStockData: Record<string, StockResult> = {
@@ -139,6 +141,7 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
       setStatusMessage("Please select a ticker from the list.");
       return;
     }
+    setShowSuggestions(false);
     setStockResult(null);
     setStatusMessage(null);
     predictionMutation.mutate(target.toUpperCase());
@@ -148,11 +151,15 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
     setSearchTicker(symbol.toUpperCase());
     setShowSuggestions(false);
     setSelectedSymbol(symbol.toUpperCase());
+    setSuggestions([]);
+    setSuppressSuggestions(true);
+    window.setTimeout(() => setSuppressSuggestions(false), 200);
     handleSearch(symbol);
   };
 
   useEffect(() => {
     if (!isApiConfigured()) return;
+    if (suppressSuggestions) return;
     const query = searchTicker.trim();
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -165,7 +172,7 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
       try {
         const results = await fetchSymbols(query, 8);
         setSuggestions(results);
-        setShowSuggestions(true);
+        setShowSuggestions(inputFocused && results.length > 0);
       } catch {
         setSuggestions([]);
       }
@@ -173,7 +180,7 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [searchTicker]);
+  }, [searchTicker, suppressSuggestions, inputFocused]);
 
   const getPredictionColor = (prediction: string) => {
     switch (prediction) {
@@ -264,10 +271,21 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
                 onChange={(e) => {
                   setSearchTicker(e.target.value.toUpperCase());
                   setSelectedSymbol(null);
+                  setSuppressSuggestions(false);
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 className="glass-card border-white/20"
-                onFocus={() => suggestions.length && setShowSuggestions(true)}
+                onFocus={() => {
+                  setInputFocused(true);
+                  if (!suppressSuggestions && suggestions.length) setShowSuggestions(true);
+                }}
+                onBlur={() => {
+                  // Slight delay so clicks on suggestions still register before hiding.
+                  setTimeout(() => {
+                    setInputFocused(false);
+                    setShowSuggestions(false);
+                  }, 120);
+                }}
               />
               <Button 
                 onClick={() => handleSearch()} 

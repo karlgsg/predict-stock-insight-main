@@ -31,9 +31,6 @@ const Landing = () => {
           <Link to="/app">
             <Button variant="ghost" className="text-slate-100">Log in</Button>
           </Link>
-          <Link to="/app">
-            <Button variant="gradient">Start free</Button>
-          </Link>
         </div>
       </header>
 
@@ -53,11 +50,11 @@ const Landing = () => {
               <Link to="/app">
                 <Button size="lg" variant="gradient">Start free</Button>
               </Link>
-              <Link to="/app">
+              <a href="#demo" className="inline-block">
                 <Button size="lg" variant="outline" className="border-blue-400 text-blue-200">
-                  See live demo
+                  Demo 
                 </Button>
-              </Link>
+              </a>
             </div>
             <div className="flex flex-wrap gap-3 text-sm text-slate-300">
               <span>Real-time autocomplete</span>
@@ -68,7 +65,7 @@ const Landing = () => {
             </div>
           </div>
 
-          <Card className="bg-white/5 border-white/10 shadow-2xl">
+          <Card id="demo" className="bg-white/5 border-white/10 shadow-2xl">
             <CardContent className="p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -118,9 +115,16 @@ const Landing = () => {
               <p className="text-2xl font-semibold">From search to signal in seconds</p>
               <p className="text-slate-300">Autocomplete, prediction, and risk—without the noise.</p>
             </div>
-            <Link to="/app">
-              <Button size="lg" variant="gradient">Launch app</Button>
-            </Link>
+            <div className="flex gap-3">
+              <Link to="/app">
+                <Button size="lg" variant="gradient">Start free</Button>
+              </Link>
+              <a href="#demo" className="inline-block">
+                <Button size="lg" variant="outline" className="border-blue-400 text-blue-200">
+                  View sample signals
+                </Button>
+              </a>
+            </div>
           </div>
         </section>
       </main>

@@ -261,7 +261,7 @@ const AuthPage = ({ onAuth }: AuthPageProps) => {
                   <ul className="space-y-3 text-sm text-muted-foreground">
                     <li className="flex items-start gap-3">
                       <span className="mt-1 h-2.5 w-2.5 rounded-full bg-primary" />
-                      Real-time symbol search plus instant mock predictions to explore ideas.
+                      Real-time stock predictions using our advanced predictable AI.
                     </li>
                     <li className="flex items-start gap-3">
                       <span className="mt-1 h-2.5 w-2.5 rounded-full bg-primary" />
@@ -269,7 +269,7 @@ const AuthPage = ({ onAuth }: AuthPageProps) => {
                     </li>
                     <li className="flex items-start gap-3">
                       <span className="mt-1 h-2.5 w-2.5 rounded-full bg-primary" />
-                      Secure sessions with rotating refresh tokens so you stay signed in.
+                      Portfolio made easy to use so you can track all investments.
                     </li>
                   </ul>
                   <div className="pt-3 border-t border-white/5 text-sm text-muted-foreground">
