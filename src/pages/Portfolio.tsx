@@ -319,7 +319,7 @@ const Portfolio = () => {
                 <Label>Risk</Label>
                 <Select
                   value={form.risk}
-                  onValueChange={(v) => setForm({ ...form, risk: v as Position["risk"] })}
+                  onValueChange={(v) => setForm({ ...form, risk: v as PortfolioPosition["risk"] })}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select risk" />
