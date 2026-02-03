@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { ApiError, fetchStockPrediction, isApiConfigured, type StockPredictionResponse } from "@/lib/api";
+import { ApiError, fetchStockPrediction, isApiConfigured, refreshToken as apiRefresh, type StockPredictionResponse } from "@/lib/api";
 import { fetchSymbols, type SymbolResult } from "@/lib/symbols";
 import { 
   Search, 
@@ -19,12 +19,14 @@ import {
   LogOut
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import PortfolioSection from "./PortfolioSection";
 
 interface User {
   name: string;
   email: string;
   token: string;
+  refreshToken?: string;
 }
 
 interface HomePageProps {
@@ -43,6 +45,7 @@ interface StockResult {
 }
 
 const HomePage = ({ user, onLogout }: HomePageProps) => {
+  const { setUser } = useAuth();
   const [searchTicker, setSearchTicker] = useState("");
   const [stockResult, setStockResult] = useState<StockResult | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -119,7 +122,18 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
         if (message.includes("VITE_API_URL")) {
           return getMockStockResult(ticker);
         }
-        if (error instanceof ApiError && error.status === 401) {
+        if (error instanceof ApiError && error.status === 401 && user.refreshToken) {
+          // try refresh once
+          const refreshed = await apiRefresh(user.refreshToken);
+          setUser({
+            name: refreshed.user.name,
+            email: refreshed.user.email,
+            token: refreshed.token,
+            refreshToken: refreshed.refreshToken ?? user.refreshToken,
+          });
+          const retry = await fetchStockPrediction(ticker, refreshed.token);
+          return mapApiToStockResult(retry);
+        } else if (error instanceof ApiError && error.status === 401) {
           setStatusMessage("Session expired. Please sign in again.");
           onLogout();
         }

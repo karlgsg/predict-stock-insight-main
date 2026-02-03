@@ -24,6 +24,7 @@ export interface AuthResponse {
     name: string;
     email: string;
   };
+  refreshToken?: string;
 }
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -105,6 +106,24 @@ export async function register(name: string, email: string, password: string): P
   if (!response.ok) {
     const errorText = await readErrorMessage(response);
     throw new ApiError(errorText, response.status, errorText);
+  }
+
+  return response.json();
+}
+
+export async function refreshToken(refreshToken: string): Promise<AuthResponse> {
+  const baseUrl = getApiUrl();
+  const response = await fetch(`${baseUrl}/auth/refresh`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ refreshToken }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "Unable to read error body");
+    throw new ApiError(`Refresh failed (${response.status}): ${errorText}`, response.status, errorText);
   }
 
   return response.json();

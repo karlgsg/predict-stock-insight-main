@@ -9,7 +9,7 @@ import { ArrowLeft, Eye, EyeOff, TrendingUp } from "lucide-react";
 import { login, register } from "@/lib/api";
 
 interface AuthPageProps {
-  onAuth: (user: { name: string; email: string; token: string }) => void;
+  onAuth: (user: { name: string; email: string; token: string; refreshToken?: string }) => void;
 }
 
 const AuthPage = ({ onAuth }: AuthPageProps) => {
@@ -35,6 +35,7 @@ const AuthPage = ({ onAuth }: AuthPageProps) => {
         name: data.user.name,
         email: data.user.email,
         token: data.token,
+        refreshToken: data.refreshToken,
       });
       setErrorMessage(null);
     },
