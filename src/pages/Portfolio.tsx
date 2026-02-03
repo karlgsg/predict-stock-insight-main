@@ -1,30 +1,16 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ArrowUpRight, ArrowDownRight, PieChart, TrendingUp, Shield, Bell } from "lucide-react";
-
-type Position = {
-  symbol: string;
-  name: string;
-  shares: number;
-  price: number;
-  changePct: number;
-  costBasis: number;
-  allocation: number;
-  risk: "Low" | "Medium" | "High";
-};
-
-const positions: Position[] = [
-  { symbol: "AAPL", name: "Apple Inc.", shares: 42, price: 185.32, changePct: 1.3, costBasis: 160.0, allocation: 28, risk: "Low" },
-  { symbol: "TSLA", name: "Tesla, Inc.", shares: 18, price: 248.5, changePct: -2.1, costBasis: 230.0, allocation: 18, risk: "High" },
-  { symbol: "NVDA", name: "NVIDIA Corp.", shares: 12, price: 875.28, changePct: 1.9, costBasis: 520.0, allocation: 24, risk: "Medium" },
-  { symbol: "MSFT", name: "Microsoft Corp.", shares: 15, price: 398.2, changePct: 0.6, costBasis: 340.0, allocation: 12, risk: "Low" },
-  { symbol: "QQQ", name: "Invesco QQQ ETF", shares: 10, price: 412.5, changePct: 0.4, costBasis: 370.0, allocation: 10, risk: "Medium" },
-  { symbol: "BND", name: "Vanguard Total Bond ETF", shares: 30, price: 72.3, changePct: 0.1, costBasis: 70.0, allocation: 8, risk: "Low" },
-];
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Link } from "react-router-dom";
+import { loadPortfolio, savePortfolio, type PortfolioPosition } from "@/lib/portfolio-store";
+import { useAuth } from "@/context/AuthContext";
 
 const recentActivity = [
   { type: "Buy", symbol: "NVDA", amount: "$3,500", time: "Today" },
@@ -32,7 +18,7 @@ const recentActivity = [
   { type: "Rebalance", symbol: "Portfolio", amount: "$5,000", time: "2 days ago" },
 ];
 
-const riskColor = (risk: Position["risk"]) => {
+const riskColor = (risk: PortfolioPosition["risk"]) => {
   switch (risk) {
     case "Low":
       return "text-green-400";
@@ -46,14 +32,56 @@ const riskColor = (risk: Position["risk"]) => {
 };
 
 const Portfolio = () => {
-  const totalValue = useMemo(() => positions.reduce((sum, p) => sum + p.price * p.shares, 0), []);
-  const totalCost = useMemo(() => positions.reduce((sum, p) => sum + p.costBasis * p.shares, 0), []);
+  const { user } = useAuth();
+  const userEmail = user?.email;
+  const [positions, setPositions] = useState<PortfolioPosition[]>([]);
+  const [activity, setActivity] = useState(recentActivity);
+  const [form, setForm] = useState<PortfolioPosition>({
+    symbol: "",
+    name: "",
+    shares: 0,
+    price: 0,
+    changePct: 0,
+    costBasis: 0,
+    risk: "Medium",
+  });
+
+  useEffect(() => {
+    const loaded = loadPortfolio(userEmail);
+    setPositions(loaded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userEmail]);
+
+  useEffect(() => {
+    savePortfolio(userEmail, positions);
+  }, [positions, userEmail]);
+
+  const totalValue = useMemo(() => positions.reduce((sum, p) => sum + p.price * p.shares, 0), [positions]);
+  const totalCost = useMemo(() => positions.reduce((sum, p) => sum + p.costBasis * p.shares, 0), [positions]);
   const totalReturnPct = ((totalValue - totalCost) / totalCost) * 100;
 
-  const allocationBars = positions.map((p) => ({
-    label: p.symbol,
-    value: p.allocation,
-  }));
+  const allocationBars = positions.map((p) => {
+    const value = p.price * p.shares;
+    const pct = totalValue ? (value / totalValue) * 100 : 0;
+    return { label: p.symbol, value: pct };
+  });
+
+  const handleAddPosition = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.symbol || !form.name || form.shares <= 0 || form.price <= 0 || form.costBasis <= 0) return;
+    const newPos: PortfolioPosition = {
+      ...form,
+      symbol: form.symbol.toUpperCase(),
+    };
+    setPositions((prev) => [...prev, newPos]);
+    setActivity((prev) => [{ type: "Buy", symbol: newPos.symbol, amount: `$${(newPos.price * newPos.shares).toFixed(0)}`, time: "Just now" }, ...prev].slice(0, 6));
+    setForm({ symbol: "", name: "", shares: 0, price: 0, changePct: 0, costBasis: 0, risk: "Medium" });
+  };
+
+  const handleRemove = (symbol: string) => {
+    setPositions((prev) => prev.filter((p) => p.symbol !== symbol));
+    setActivity((prev) => [{ type: "Sell", symbol, amount: "Removed", time: "Just now" }, ...prev].slice(0, 6));
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50">
@@ -65,6 +93,11 @@ const Portfolio = () => {
             <p className="text-slate-300">Performance, allocation, and risk in one place.</p>
           </div>
           <div className="flex gap-3">
+            <Link to="/app">
+              <Button variant="outline" className="border-white/30 text-white">
+                Home
+              </Button>
+            </Link>
             <Button variant="outline" className="border-blue-400 text-blue-200">
               <PieChart className="w-4 h-4 mr-2" />
               Rebalance (soon)
@@ -143,6 +176,7 @@ const Portfolio = () => {
                   <TableHead>P/L</TableHead>
                   <TableHead>Allocation</TableHead>
                   <TableHead>Risk</TableHead>
+                  <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -151,6 +185,7 @@ const Portfolio = () => {
                   const cost = p.costBasis * p.shares;
                   const pl = value - cost;
                   const plPct = ((value - cost) / cost) * 100;
+                  const allocationPct = totalValue ? (value / totalValue) * 100 : 0;
                   return (
                     <TableRow key={p.symbol}>
                       <TableCell className="font-semibold">{p.symbol}</TableCell>
@@ -161,8 +196,13 @@ const Portfolio = () => {
                         {pl >= 0 ? <ArrowUpRight className="inline w-4 h-4 mr-1" /> : <ArrowDownRight className="inline w-4 h-4 mr-1" />}
                         ${pl.toFixed(0)} ({plPct.toFixed(1)}%)
                       </TableCell>
-                      <TableCell>{p.allocation}%</TableCell>
+                      <TableCell>{allocationPct.toFixed(1)}%</TableCell>
                       <TableCell className={riskColor(p.risk)}>{p.risk}</TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" onClick={() => handleRemove(p.symbol)}>
+                          Remove
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -182,7 +222,7 @@ const Portfolio = () => {
                 <div key={a.label}>
                   <div className="flex justify-between text-sm text-slate-200">
                     <span>{a.label}</span>
-                    <span>{a.value}%</span>
+                    <span>{a.value.toFixed(1)}%</span>
                   </div>
                   <Progress value={a.value} />
                 </div>
@@ -211,6 +251,102 @@ const Portfolio = () => {
             </CardContent>
           </Card>
         </div>
+
+        <Card className="bg-white/5 border-white/10">
+          <CardHeader>
+            <CardTitle>Edit portfolio</CardTitle>
+            <CardDescription>Add or remove positions</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="grid md:grid-cols-3 gap-4 mb-4" onSubmit={handleAddPosition}>
+              <div className="space-y-2">
+                <Label htmlFor="symbol">Symbol</Label>
+                <Input
+                  id="symbol"
+                  value={form.symbol}
+                  onChange={(e) => setForm({ ...form, symbol: e.target.value.toUpperCase() })}
+                  placeholder="AAPL"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="name">Name</Label>
+                <Input
+                  id="name"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Apple Inc."
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="shares">Shares</Label>
+                <Input
+                  id="shares"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.shares}
+                  onChange={(e) => setForm({ ...form, shares: Number(e.target.value) })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="price">Price</Label>
+                <Input
+                  id="price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.price}
+                  onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="costBasis">Cost basis</Label>
+                <Input
+                  id="costBasis"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.costBasis}
+                  onChange={(e) => setForm({ ...form, costBasis: Number(e.target.value) })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Risk</Label>
+                <Select
+                  value={form.risk}
+                  onValueChange={(v) => setForm({ ...form, risk: v as Position["risk"] })}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select risk" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Low">Low</SelectItem>
+                    <SelectItem value="Medium">Medium</SelectItem>
+                    <SelectItem value="High">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="md:col-span-3 flex gap-3">
+                <Button type="submit" variant="gradient">Add position</Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-white/30 text-white"
+                  onClick={() =>
+                    setForm({ symbol: "", name: "", shares: 0, price: 0, changePct: 0, costBasis: 0, risk: "Medium" })
+                  }
+                >
+                  Clear
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
 
         <Card className="bg-white/5 border-white/10">
           <CardHeader>

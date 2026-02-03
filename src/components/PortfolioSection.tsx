@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { loadPortfolio, savePortfolio, type PortfolioPosition } from "@/lib/portfolio-store";
 
 type Holding = {
   id: string;
@@ -15,45 +16,39 @@ type Holding = {
   changePercent: number;
 };
 
-const defaultHoldings: Holding[] = [
-  { id: "aapl", symbol: "AAPL", shares: 12, avgCost: 165.4, price: 185.3, changePercent: 0.82 },
-  { id: "tsla", symbol: "TSLA", shares: 5, avgCost: 238.1, price: 248.5, changePercent: -1.12 },
-  { id: "nvda", symbol: "NVDA", shares: 3, avgCost: 720.0, price: 875.3, changePercent: 1.65 },
-];
-
-const storageKey = (email: string) => `portfolio_${email || "guest"}`;
-
 interface PortfolioSectionProps {
   userEmail: string;
 }
 
 const PortfolioSection = ({ userEmail }: PortfolioSectionProps) => {
-  const [holdings, setHoldings] = useState<Holding[]>(defaultHoldings);
+  const [holdings, setHoldings] = useState<Holding[]>([]);
   const [newPosition, setNewPosition] = useState({ symbol: "", shares: "", avgCost: "" });
 
-  // Load / persist to localStorage per-user
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = localStorage.getItem(storageKey(userEmail));
-      if (raw) {
-        setHoldings(JSON.parse(raw));
-      } else {
-        localStorage.setItem(storageKey(userEmail), JSON.stringify(defaultHoldings));
-      }
-    } catch {
-      /* ignore storage errors */
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const loaded = loadPortfolio(userEmail);
+    const mapped: Holding[] = loaded.map((p) => ({
+      id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${p.symbol}`,
+      symbol: p.symbol,
+      shares: p.shares,
+      avgCost: p.costBasis,
+      price: p.price,
+      changePercent: p.changePct ?? 0,
+    }));
+    setHoldings(mapped);
   }, [userEmail]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      localStorage.setItem(storageKey(userEmail), JSON.stringify(holdings));
-    } catch {
-      /* ignore storage errors */
-    }
+    // keep shared store in sync
+    const toSave: PortfolioPosition[] = holdings.map((h) => ({
+      symbol: h.symbol,
+      name: h.symbol,
+      shares: h.shares,
+      price: h.price,
+      costBasis: h.avgCost,
+      changePct: h.changePercent,
+      risk: "Medium",
+    }));
+    savePortfolio(userEmail, toSave);
   }, [holdings, userEmail]);
 
   const metrics = useMemo(() => {
