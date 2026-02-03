@@ -18,6 +18,7 @@ import {
   BarChart3,
   LogOut
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import PortfolioSection from "./PortfolioSection";
 
 interface User {
@@ -230,9 +231,16 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
             </div>
             <h1 className="text-xl font-bold">Predictable Stocks</h1>
           </div>
-          <Button variant="ghost" size="icon" onClick={onLogout}>
-            <LogOut className="w-5 h-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link to="/app/portfolio">
+              <Button variant="outline" size="sm" className="border-white/30 text-white">
+                Portfolio
+              </Button>
+            </Link>
+            <Button variant="ghost" size="icon" onClick={onLogout}>
+              <LogOut className="w-5 h-5" />
+            </Button>
+          </div>
         </div>
       </header>
 
