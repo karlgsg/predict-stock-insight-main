@@ -7,6 +7,14 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Env files (commit templates only)
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
 node_modules
 dist
 dist-ssr
@@ -15,6 +23,15 @@ dist-ssr
 /server/.env
 /server/data/symbols.json
 /server/prisma/dev.db
+/server-ml/.env
+/server-ml/.venv
+/server-ml/__pycache__
+/server-ml/.pytest_cache
+/server-ml/.mypy_cache
+/server-ml/.ruff_cache
+/server-ml/bundles
+**/__pycache__/
+*.pyc
 
 # Editor directories and files
 .vscode/*

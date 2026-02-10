@@ -15,7 +15,6 @@ import {
   Target,
   Shield,
   AlertTriangle,
-  BarChart3,
   LogOut
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -42,6 +41,8 @@ interface StockResult {
   changePercent: number;
   prediction: "bullish" | "bearish" | "neutral";
   confidence: number;
+  confidenceSource?: "model" | "derived";
+  asOfDate?: string | null;
 }
 
 const HomePage = ({ user, onLogout }: HomePageProps) => {
@@ -95,6 +96,8 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
     changePercent: data.changePercent,
     prediction: data.prediction,
     confidence: data.confidence,
+    confidenceSource: data.confidenceSource,
+    asOfDate: data.asOfDate,
   });
 
   const getMockStockResult = (ticker: string): StockResult => {
@@ -358,27 +361,29 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold">${stockResult.price.toFixed(2)}</p>
-                      <p className={`text-sm flex items-center gap-1 ${stockResult.change >= 0 ? 'text-profit' : 'text-loss'}`}>
+                      <p className={`text-sm flex items-center justify-end gap-1 ${stockResult.change >= 0 ? "text-profit" : "text-loss"}`}>
                         {stockResult.change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {stockResult.change >= 0 ? '+' : ''}{stockResult.change.toFixed(2)} ({stockResult.changePercent.toFixed(2)}%)
+                        {stockResult.change >= 0 ? "+" : ""}{stockResult.change.toFixed(2)} ({stockResult.changePercent >= 0 ? "+" : ""}{stockResult.changePercent.toFixed(2)}%)
                       </p>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className={`${getPredictionColor(stockResult.prediction)} border-current`}>
-                        {getPredictionIcon(stockResult.prediction)}
-                        {stockResult.prediction.toUpperCase()}
-                      </Badge>
-                      <span className="text-sm text-muted-foreground">
-                        {stockResult.confidence}% confidence
-                      </span>
+
+                  <div className="flex items-center justify-between mb-3">
+                    <Badge variant="outline" className={`${getPredictionColor(stockResult.prediction)} border-current`}>
+                      {getPredictionIcon(stockResult.prediction)}
+                      {stockResult.prediction.toUpperCase()}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      Confidence: {stockResult.confidence}% ({stockResult.confidenceSource === "model" ? "model" : "estimated"})
+                    </span>
+                  </div>
+
+                  <div className="rounded-md border border-white/10 p-3 text-sm text-muted-foreground">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                      <span>Predicted Price: <span className="text-foreground font-medium">${(stockResult.price + stockResult.change).toFixed(2)}</span></span>
+                      <span>Expected Return: <span className={`font-medium ${stockResult.changePercent >= 0 ? "text-profit" : "text-loss"}`}>{stockResult.changePercent >= 0 ? "+" : ""}{stockResult.changePercent.toFixed(2)}%</span></span>
+                      {stockResult.asOfDate && <span>As-of: <span className="text-foreground font-medium">{stockResult.asOfDate}</span></span>}
                     </div>
-                    <Button variant="ghost" size="sm">
-                      <BarChart3 className="w-4 h-4 mr-2" />
-                      View Chart
-                    </Button>
                   </div>
                 </CardContent>
               </Card>

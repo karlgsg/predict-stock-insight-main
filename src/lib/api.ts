@@ -6,6 +6,8 @@ export interface StockPredictionResponse {
   changePercent: number;
   prediction: "bullish" | "bearish" | "neutral";
   confidence: number;
+  confidenceSource?: "model" | "derived";
+  asOfDate?: string | null;
 }
 
 export class ApiError extends Error {

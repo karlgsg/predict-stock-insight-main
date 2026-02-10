@@ -1,0 +1,10 @@
+fastapi==0.115.8
+uvicorn[standard]==0.34.0
+numpy==1.26.4
+pandas==2.2.3
+joblib==1.4.2
+yfinance==0.2.58
+scikit-learn==1.6.1
+tensorflow-macos==2.16.2
+tensorflow-metal==1.2.0
+python-dotenv==1.0.1

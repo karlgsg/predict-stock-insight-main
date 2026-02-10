@@ -17,6 +17,11 @@ const PORT = process.env.PORT || 8000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || "15m"; // e.g., "15m"
 const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.REFRESH_TOKEN_TTL_DAYS || "7", 10);
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || "";
+const ML_SERVICE_API_KEY = process.env.ML_SERVICE_API_KEY || process.env.COLAB_API_KEY || "";
+const COLAB_SIGNAL_URL = process.env.COLAB_SIGNAL_URL || "";
+const COLAB_API_KEY = process.env.COLAB_API_KEY || "";
+const COLAB_TIMEOUT_MS = parseInt(process.env.COLAB_TIMEOUT_MS || "12000", 10);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const symbolsPath = path.resolve(__dirname, "../data/symbols.json");
@@ -34,6 +39,109 @@ function loadSymbols() {
 }
 
 let symbols = loadSymbols();
+
+function toFiniteNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizePrediction(actionRaw, expectedReturn) {
+  const action = String(actionRaw || "").toUpperCase();
+  if (action === "BUY") return "bullish";
+  if (action === "SELL") return "bearish";
+  if (action === "HOLD") return "neutral";
+
+  if (expectedReturn > 0) return "bullish";
+  if (expectedReturn < 0) return "bearish";
+  return "neutral";
+}
+
+function buildConfidencePercent(expectedReturn) {
+  const magnitude = Math.abs(expectedReturn || 0);
+  const confidence = Math.round(Math.max(55, Math.min(95, 55 + magnitude * 250)));
+  return confidence;
+}
+
+function normalizeConfidencePercent(rawConfidence, expectedReturn) {
+  const parsed = Number(rawConfidence);
+  if (Number.isFinite(parsed)) {
+    const asPercent = parsed <= 1 ? parsed * 100 : parsed;
+    return Math.round(Math.max(0, Math.min(100, asPercent)));
+  }
+  return buildConfidencePercent(expectedReturn);
+}
+
+async function postSignalRequest(url, ticker) {
+  if (!url) return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), COLAB_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(ML_SERVICE_API_KEY ? { Authorization: `Bearer ${ML_SERVICE_API_KEY}` } : {}),
+      },
+      body: JSON.stringify({ ticker }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Upstream endpoint failed (${response.status}): ${body || "No response body"}`);
+    }
+
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function mapColabSignalToPrediction(symbol, symbolName, payload) {
+  const currentPrice = toFiniteNumber(
+    payload?.current_price ?? payload?.price ?? payload?.close
+  );
+  const predictedPrice = toFiniteNumber(
+    payload?.pred_price_h ?? payload?.predicted_price ?? payload?.forecast_price,
+    currentPrice
+  );
+  const expectedReturn = toFiniteNumber(
+    payload?.expected_return ??
+      payload?.exp_ret ??
+      (currentPrice ? (predictedPrice - currentPrice) / currentPrice : 0),
+    0
+  );
+
+  const change = predictedPrice - currentPrice;
+  const changePercent = expectedReturn * 100;
+  const prediction = normalizePrediction(payload?.action, expectedReturn);
+  const confidence = normalizeConfidencePercent(payload?.confidence, expectedReturn);
+  const hasModelConfidence = Number.isFinite(Number(payload?.confidence));
+
+  return {
+    symbol,
+    name: symbolName || payload?.name || `${symbol} Company`,
+    price: Number(currentPrice.toFixed(2)),
+    change: Number(change.toFixed(2)),
+    changePercent: Number(changePercent.toFixed(2)),
+    prediction,
+    confidence,
+    confidenceSource: hasModelConfidence ? "model" : "derived",
+    asOfDate: payload?.asof_date ?? null,
+  };
+}
+
+async function fetchPredictionSignal(ticker) {
+  if (ML_SERVICE_URL) {
+    return await postSignalRequest(ML_SERVICE_URL, ticker);
+  }
+  if (COLAB_SIGNAL_URL) {
+    return await postSignalRequest(COLAB_SIGNAL_URL, ticker);
+  }
+  return null;
+}
 
 // In-memory user store: email -> { id, name, email, passwordHash }
 function signAccessToken(user) {
@@ -161,11 +269,10 @@ app.post("/auth/refresh", async (req, res) => {
   return res.json({ token: accessToken, refreshToken: newRefresh, user: { name: user.name, email: user.email } });
 });
 
-app.post("/predict", authMiddleware, (req, res) => {
+app.post("/predict", authMiddleware, async (req, res) => {
   const { ticker } = req.body || {};
   if (!ticker) return res.status(400).json({ error: "Ticker is required." });
 
-  // Placeholder prediction (replace with ML model later)
   // Reload symbols in case the file was refreshed after server start.
   symbols = loadSymbols();
   const symbol = String(ticker).toUpperCase();
@@ -174,6 +281,20 @@ app.post("/predict", authMiddleware, (req, res) => {
     return res.status(400).json({ error: "Unknown ticker. Please pick a valid symbol." });
   }
 
+  try {
+    const upstreamPayload = await fetchPredictionSignal(symbol);
+    if (upstreamPayload) {
+      const mapped = mapColabSignalToPrediction(symbol, symbolEntry?.name, upstreamPayload);
+      return res.json(mapped);
+    }
+  } catch (err) {
+    console.error(`Prediction service request failed for ${symbol}:`, err?.message || err);
+    return res.status(502).json({
+      error: "Prediction service unavailable. Check ML_SERVICE_URL/COLAB_SIGNAL_URL and runtime status.",
+    });
+  }
+
+  // Fallback mock response when no upstream prediction service is configured.
   const price = Math.random() * 200 + 50;
   const change = (Math.random() - 0.5) * 10;
   const changePercent = (Math.random() - 0.5) * 5;
