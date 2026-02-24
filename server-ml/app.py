@@ -67,6 +67,30 @@ class PredictResponse(BaseModel):
     confidence: Optional[float] = None
 
 
+def discover_supported_tickers() -> list[str]:
+    if not BUNDLE_DIR.exists():
+        return []
+
+    candidates = sorted(
+        {
+            p.name[: -len("_meta.json")]
+            for p in BUNDLE_DIR.glob("*_meta.json")
+            if p.name.endswith("_meta.json")
+        }
+    )
+    supported: list[str] = []
+    for ticker in candidates:
+        required = [
+            BUNDLE_DIR / f"{ticker}_tcn_final.keras",
+            BUNDLE_DIR / f"{ticker}_feature_scaler.pkl",
+            BUNDLE_DIR / f"{ticker}_target_scaler.pkl",
+            BUNDLE_DIR / f"{ticker}_meta.json",
+        ]
+        if all(p.exists() for p in required):
+            supported.append(ticker.upper())
+    return supported
+
+
 def check_auth(authorization: Optional[str]) -> None:
     if not ML_API_KEY:
         return
@@ -213,12 +237,21 @@ def run_model_inference(ticker: str) -> PredictResponse:
 
 @app.get("/health")
 def health():
+    supported_tickers = discover_supported_tickers()
     return {
         "ok": True,
         "bundle_dir": str(BUNDLE_DIR.resolve()),
         "bundle_dir_exists": BUNDLE_DIR.exists(),
+        "supported_tickers_count": len(supported_tickers),
         "time": datetime.utcnow().isoformat(timespec="seconds") + "Z",
     }
+
+
+@app.get("/supported-symbols")
+def supported_symbols(authorization: Optional[str] = Header(default=None)):
+    check_auth(authorization)
+    supported_tickers = discover_supported_tickers()
+    return {"symbols": supported_tickers, "count": len(supported_tickers)}
 
 
 @app.post("/predict", response_model=PredictResponse)

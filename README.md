@@ -71,3 +71,34 @@ It uses `DRIVE_REMOTE` and `DRIVE_BUNDLE_PATH` from `server-ml/.env`.
 - Commit `*.env.example` files, do not commit `.env`.
 - Root `.gitignore` is configured to keep local env files and model bundles out of git.
 - Detailed ML-service docs: `server-ml/README.md`.
+
+## Deployment Baseline
+
+1. Copy production templates:
+```bash
+cp .env.production.example .env.production
+cp server/.env.production.example server/.env
+cp server-ml/.env.production.example server-ml/.env
+```
+
+2. Set real secret values in:
+- `server/.env` (`JWT_SECRET`, `ML_SERVICE_API_KEY`, `ALLOWED_ORIGINS`)
+- `server-ml/.env` (`ML_API_KEY`)
+
+3. Sync model bundles (or mount them another way):
+```bash
+cd server-ml
+./scripts/sync_bundles_from_drive.sh
+```
+
+4. Build and run deployment stack:
+```bash
+cd ..
+docker compose -f docker-compose.deploy.yml up --build -d
+```
+
+5. Verify health:
+```bash
+curl http://127.0.0.1:8002/health
+curl http://127.0.0.1:8001/health
+```

@@ -216,9 +216,6 @@ const PortfolioSection = ({ userEmail }: PortfolioSectionProps) => {
               <Button variant="gradient" className="w-full" onClick={addPosition}>
                 Add to portfolio
               </Button>
-              <p className="text-xs text-muted-foreground">
-                Portfolio is stored locally per account for now. Hook this to your API when ready.
-              </p>
             </div>
           </div>
         </div>
