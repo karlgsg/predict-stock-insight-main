@@ -392,7 +392,7 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
         </Card>
 
         {/* Portfolio */}
-        <PortfolioSection userEmail={user.email} />
+        <PortfolioSection userEmail={user.email} userToken={user.token} />
 
         {/* Risk Categories */}
         <Card className="glass-card border-white/10 animate-slide-up">

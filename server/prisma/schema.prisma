@@ -14,6 +14,7 @@ model User {
   passwordHash String
   createdAt    DateTime       @default(now())
   refreshTokens RefreshToken[]
+  portfolioPositions PortfolioPosition[]
 }
 
 model RefreshToken {
@@ -24,4 +25,21 @@ model RefreshToken {
   expiresAt  DateTime
   revoked    Boolean  @default(false)
   createdAt  DateTime @default(now())
+}
+
+model PortfolioPosition {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  symbol    String
+  name      String
+  shares    Float
+  price     Float
+  costBasis Float
+  changePct Float    @default(0)
+  risk      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, symbol])
 }

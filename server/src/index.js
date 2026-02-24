@@ -9,14 +9,17 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { PrismaClient } from "@prisma/client";
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-
 const PORT = process.env.PORT || 8000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || "15m"; // e.g., "15m"
 const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.REFRESH_TOKEN_TTL_DAYS || "7", 10);
+const NODE_ENV = process.env.NODE_ENV || "development";
+const REQUIRE_ML_SERVICE =
+  process.env.REQUIRE_ML_SERVICE === "true" || NODE_ENV === "production";
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || "";
 const ML_SERVICE_API_KEY = process.env.ML_SERVICE_API_KEY || process.env.COLAB_API_KEY || "";
 const COLAB_SIGNAL_URL = process.env.COLAB_SIGNAL_URL || "";
@@ -25,6 +28,19 @@ const COLAB_TIMEOUT_MS = parseInt(process.env.COLAB_TIMEOUT_MS || "12000", 10);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const symbolsPath = path.resolve(__dirname, "../data/symbols.json");
+
+const app = express();
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.length === 0) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+      return callback(new Error("Origin not allowed by CORS"));
+    },
+  })
+);
+app.use(express.json());
 
 const prisma = new PrismaClient();
 
@@ -39,6 +55,10 @@ function loadSymbols() {
 }
 
 let symbols = loadSymbols();
+let supportedSymbolsCache = {
+  symbols: null,
+  expiresAt: 0,
+};
 
 function toFiniteNumber(value, fallback = 0) {
   const n = Number(value);
@@ -143,6 +163,47 @@ async function fetchPredictionSignal(ticker) {
   return null;
 }
 
+function getMlBaseUrl() {
+  if (!ML_SERVICE_URL) return null;
+  try {
+    const url = new URL(ML_SERVICE_URL);
+    if (url.pathname.endsWith("/predict")) {
+      url.pathname = url.pathname.slice(0, -"/predict".length) || "/";
+    }
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSupportedSymbols() {
+  const now = Date.now();
+  if (supportedSymbolsCache.symbols && now < supportedSymbolsCache.expiresAt) {
+    return supportedSymbolsCache.symbols;
+  }
+
+  const base = getMlBaseUrl();
+  if (!base) return null;
+
+  const response = await fetch(`${base}/supported-symbols`, {
+    headers: {
+      ...(ML_SERVICE_API_KEY ? { Authorization: `Bearer ${ML_SERVICE_API_KEY}` } : {}),
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Supported-symbols fetch failed (${response.status})`);
+  }
+  const payload = await response.json();
+  const list = Array.isArray(payload?.symbols) ? payload.symbols : [];
+  const normalized = new Set(list.map((s) => String(s || "").toUpperCase()));
+
+  supportedSymbolsCache = {
+    symbols: normalized,
+    expiresAt: now + 60_000,
+  };
+  return normalized;
+}
+
 // In-memory user store: email -> { id, name, email, passwordHash }
 function signAccessToken(user) {
   return jwt.sign({ sub: user.id, email: user.email, name: user.name }, JWT_SECRET, {
@@ -205,6 +266,38 @@ function authMiddleware(req, res, next) {
   } catch {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
+}
+
+function getAuthedUserId(req) {
+  return req?.user?.sub;
+}
+
+function parsePositionPayload(body) {
+  const symbol = String(body?.symbol || "").trim().toUpperCase();
+  const name = String(body?.name || "").trim();
+  const shares = Number(body?.shares);
+  const price = Number(body?.price);
+  const costBasis = Number(body?.costBasis);
+  const changePct = Number.isFinite(Number(body?.changePct)) ? Number(body?.changePct) : 0;
+  const riskRaw = body?.risk;
+  const risk = ["Low", "Medium", "High"].includes(riskRaw) ? riskRaw : null;
+
+  if (!symbol || !name) {
+    return { error: "Symbol and name are required." };
+  }
+  if (!Number.isFinite(shares) || shares <= 0) {
+    return { error: "Shares must be a positive number." };
+  }
+  if (!Number.isFinite(price) || price <= 0) {
+    return { error: "Price must be a positive number." };
+  }
+  if (!Number.isFinite(costBasis) || costBasis <= 0) {
+    return { error: "Cost basis must be a positive number." };
+  }
+
+  return {
+    value: { symbol, name, shares, price, costBasis, changePct, risk },
+  };
 }
 
 app.post("/auth/register", async (req, res) => {
@@ -294,6 +387,12 @@ app.post("/predict", authMiddleware, async (req, res) => {
     });
   }
 
+  if (REQUIRE_ML_SERVICE) {
+    return res.status(503).json({
+      error: "Prediction service not configured. Set ML_SERVICE_URL (or COLAB_SIGNAL_URL).",
+    });
+  }
+
   // Fallback mock response when no upstream prediction service is configured.
   const price = Math.random() * 200 + 50;
   const change = (Math.random() - 0.5) * 10;
@@ -312,15 +411,74 @@ app.post("/predict", authMiddleware, async (req, res) => {
   });
 });
 
-app.get("/symbols", (_req, res) => {
+app.get("/portfolio", authMiddleware, async (req, res) => {
+  const userId = getAuthedUserId(req);
+  if (!userId) return res.status(401).json({ error: "Invalid user token." });
+
+  const positions = await prisma.portfolioPosition.findMany({
+    where: { userId },
+    orderBy: { symbol: "asc" },
+  });
+  return res.json(positions);
+});
+
+app.post("/portfolio", authMiddleware, async (req, res) => {
+  const userId = getAuthedUserId(req);
+  if (!userId) return res.status(401).json({ error: "Invalid user token." });
+
+  const parsed = parsePositionPayload(req.body || {});
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
+  const { symbol, name, shares, price, costBasis, changePct, risk } = parsed.value;
+
+  const saved = await prisma.portfolioPosition.upsert({
+    where: {
+      userId_symbol: {
+        userId,
+        symbol,
+      },
+    },
+    update: { name, shares, price, costBasis, changePct, risk },
+    create: { userId, symbol, name, shares, price, costBasis, changePct, risk },
+  });
+
+  return res.json(saved);
+});
+
+app.delete("/portfolio/:symbol", authMiddleware, async (req, res) => {
+  const userId = getAuthedUserId(req);
+  if (!userId) return res.status(401).json({ error: "Invalid user token." });
+
+  const symbol = String(req.params.symbol || "").trim().toUpperCase();
+  if (!symbol) return res.status(400).json({ error: "Symbol is required." });
+
+  await prisma.portfolioPosition.deleteMany({
+    where: { userId, symbol },
+  });
+  return res.json({ ok: true });
+});
+
+app.get("/symbols", async (_req, res) => {
   const q = (_req.query.q || "").toString().trim().toLowerCase();
   const limit = Math.min(parseInt(_req.query.limit, 10) || 10, 50);
+  let list = symbols;
 
-  if (!q) {
-    return res.json(symbols.slice(0, limit));
+  try {
+    const supported = await fetchSupportedSymbols();
+    if (supported) {
+      list = symbols.filter((s) => supported.has(String(s.symbol || "").toUpperCase()));
+    }
+  } catch (err) {
+    console.warn("Could not filter symbols by ML support:", err?.message || err);
+    if (REQUIRE_ML_SERVICE) {
+      return res.json([]);
+    }
   }
 
-  const filtered = symbols.filter(
+  if (!q) {
+    return res.json(list.slice(0, limit));
+  }
+
+  const filtered = list.filter(
     (s) =>
       s.symbol.toLowerCase().includes(q) ||
       s.name.toLowerCase().includes(q)

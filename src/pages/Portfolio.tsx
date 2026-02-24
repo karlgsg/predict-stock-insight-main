@@ -47,14 +47,20 @@ const Portfolio = () => {
   });
 
   useEffect(() => {
-    const loaded = loadPortfolio(userEmail);
-    setPositions(loaded);
+    let cancelled = false;
+    (async () => {
+      const loaded = await loadPortfolio(userEmail, user?.token);
+      if (!cancelled) setPositions(loaded);
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userEmail]);
+  }, [userEmail, user?.token]);
 
   useEffect(() => {
-    savePortfolio(userEmail, positions);
-  }, [positions, userEmail]);
+    void savePortfolio(userEmail, positions, user?.token);
+  }, [positions, userEmail, user?.token]);
 
   const totalValue = useMemo(() => positions.reduce((sum, p) => sum + p.price * p.shares, 0), [positions]);
   const totalCost = useMemo(() => positions.reduce((sum, p) => sum + p.costBasis * p.shares, 0), [positions]);

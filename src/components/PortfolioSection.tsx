@@ -18,24 +18,32 @@ type Holding = {
 
 interface PortfolioSectionProps {
   userEmail: string;
+  userToken?: string;
 }
 
-const PortfolioSection = ({ userEmail }: PortfolioSectionProps) => {
+const PortfolioSection = ({ userEmail, userToken }: PortfolioSectionProps) => {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [newPosition, setNewPosition] = useState({ symbol: "", shares: "", avgCost: "" });
 
   useEffect(() => {
-    const loaded = loadPortfolio(userEmail);
-    const mapped: Holding[] = loaded.map((p) => ({
-      id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${p.symbol}`,
-      symbol: p.symbol,
-      shares: p.shares,
-      avgCost: p.costBasis,
-      price: p.price,
-      changePercent: p.changePct ?? 0,
-    }));
-    setHoldings(mapped);
-  }, [userEmail]);
+    let cancelled = false;
+    (async () => {
+      const loaded = await loadPortfolio(userEmail, userToken);
+      if (cancelled) return;
+      const mapped: Holding[] = loaded.map((p) => ({
+        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${p.symbol}`,
+        symbol: p.symbol,
+        shares: p.shares,
+        avgCost: p.costBasis,
+        price: p.price,
+        changePercent: p.changePct ?? 0,
+      }));
+      setHoldings(mapped);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userEmail, userToken]);
 
   useEffect(() => {
     // keep shared store in sync
@@ -48,8 +56,8 @@ const PortfolioSection = ({ userEmail }: PortfolioSectionProps) => {
       changePct: h.changePercent,
       risk: "Medium",
     }));
-    savePortfolio(userEmail, toSave);
-  }, [holdings, userEmail]);
+    void savePortfolio(userEmail, toSave, userToken);
+  }, [holdings, userEmail, userToken]);
 
   const metrics = useMemo(() => {
     const totalValue = holdings.reduce((sum, h) => sum + h.price * h.shares, 0);
@@ -99,7 +107,7 @@ const PortfolioSection = ({ userEmail }: PortfolioSectionProps) => {
             <CardDescription>Track holdings, P/L, and daily moves</CardDescription>
           </div>
           <Badge variant="outline" className="text-xs">
-            Local preview
+            Synced
           </Badge>
         </div>
       </CardHeader>
@@ -132,7 +140,7 @@ const PortfolioSection = ({ userEmail }: PortfolioSectionProps) => {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">Holdings</h3>
-              <span className="text-xs text-muted-foreground">Local mock data</span>
+              <span className="text-xs text-muted-foreground">Saved to your account</span>
             </div>
             <div className="overflow-hidden rounded-lg border border-white/5">
               <table className="min-w-full text-sm">
