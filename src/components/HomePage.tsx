@@ -12,9 +12,6 @@ import {
   TrendingUp, 
   TrendingDown, 
   Minus,
-  Target,
-  Shield,
-  AlertTriangle,
   LogOut
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -188,7 +185,7 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
     }
     debounceRef.current = window.setTimeout(async () => {
       try {
-        const results = await fetchSymbols(query, 8);
+        const results = await fetchSymbols(query, 8, true);
         setSuggestions(results);
         setShowSuggestions(inputFocused && results.length > 0);
       } catch {
@@ -215,27 +212,6 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
       default: return <Minus className="w-4 h-4" />;
     }
   };
-
-  const riskCategories = [
-    {
-      title: "High Risk",
-      icon: <AlertTriangle className="w-6 h-6" />,
-      variant: "risk-high" as const,
-      description: "Volatile growth stocks",
-    },
-    {
-      title: "Medium Risk", 
-      icon: <Target className="w-6 h-6" />,
-      variant: "risk-medium" as const,
-      description: "Balanced investments",
-    },
-    {
-      title: "Low Risk",
-      icon: <Shield className="w-6 h-6" />,
-      variant: "risk-low" as const,
-      description: "Stable blue chips",
-    },
-  ];
 
   return (
     <div className="min-h-screen gradient-hero">
@@ -393,33 +369,6 @@ const HomePage = ({ user, onLogout }: HomePageProps) => {
 
         {/* Portfolio */}
         <PortfolioSection userEmail={user.email} userToken={user.token} />
-
-        {/* Risk Categories */}
-        <Card className="glass-card border-white/10 animate-slide-up">
-          <CardHeader>
-            <CardTitle>Risk Categories</CardTitle>
-            <CardDescription>Explore stocks by risk level</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {riskCategories.map((category) => (
-                <Button
-                  key={category.title}
-                  variant={category.variant}
-                  className="h-auto p-6 flex-col gap-3"
-                >
-                  <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
-                    {category.icon}
-                  </div>
-                  <div className="text-center">
-                    <h3 className="font-semibold">{category.title}</h3>
-                    <p className="text-sm opacity-90">{category.description}</p>
-                  </div>
-                </Button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Footer */}
         <div className="text-center py-8">

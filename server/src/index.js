@@ -457,20 +457,36 @@ app.delete("/portfolio/:symbol", authMiddleware, async (req, res) => {
   return res.json({ ok: true });
 });
 
+app.get("/supported-symbols", async (_req, res) => {
+  try {
+    const supported = await fetchSupportedSymbols();
+    if (!supported) return res.json({ symbols: [], count: 0 });
+    return res.json({ symbols: Array.from(supported).sort(), count: supported.size });
+  } catch (err) {
+    console.warn("Could not read supported symbols:", err?.message || err);
+    return res.json({ symbols: [], count: 0 });
+  }
+});
+
 app.get("/symbols", async (_req, res) => {
   const q = (_req.query.q || "").toString().trim().toLowerCase();
   const limit = Math.min(parseInt(_req.query.limit, 10) || 10, 50);
+  const supportedOnly = ["1", "true", "yes"].includes(
+    String(_req.query.supported || "").toLowerCase()
+  );
   let list = symbols;
 
-  try {
-    const supported = await fetchSupportedSymbols();
-    if (supported) {
-      list = symbols.filter((s) => supported.has(String(s.symbol || "").toUpperCase()));
-    }
-  } catch (err) {
-    console.warn("Could not filter symbols by ML support:", err?.message || err);
-    if (REQUIRE_ML_SERVICE) {
-      return res.json([]);
+  if (supportedOnly) {
+    try {
+      const supported = await fetchSupportedSymbols();
+      if (supported) {
+        list = symbols.filter((s) => supported.has(String(s.symbol || "").toUpperCase()));
+      }
+    } catch (err) {
+      console.warn("Could not filter symbols by ML support:", err?.message || err);
+      if (REQUIRE_ML_SERVICE) {
+        return res.json([]);
+      }
     }
   }
 

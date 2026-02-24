@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { TrendingUp, TrendingDown, Plus, Trash2 } from "lucide-react";
+import { TrendingUp, TrendingDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadPortfolio, savePortfolio, type PortfolioPosition } from "@/lib/portfolio-store";
 
@@ -23,7 +21,6 @@ interface PortfolioSectionProps {
 
 const PortfolioSection = ({ userEmail, userToken }: PortfolioSectionProps) => {
   const [holdings, setHoldings] = useState<Holding[]>([]);
-  const [newPosition, setNewPosition] = useState({ symbol: "", shares: "", avgCost: "" });
 
   useEffect(() => {
     let cancelled = false;
@@ -68,30 +65,6 @@ const PortfolioSection = ({ userEmail, userToken }: PortfolioSectionProps) => {
     return { totalValue, totalCost, totalPnL, dayChange, dayChangePct };
   }, [holdings]);
 
-  const addPosition = () => {
-    const symbol = newPosition.symbol.trim().toUpperCase();
-    const shares = parseFloat(newPosition.shares);
-    const avgCost = parseFloat(newPosition.avgCost);
-    if (!symbol || !shares || !avgCost || shares <= 0 || avgCost <= 0) return;
-
-    // Simulate a current price around avg cost and a small daily move.
-    const price = Number((avgCost * (1 + (Math.random() - 0.5) * 0.12)).toFixed(2));
-    const changePercent = Number(((Math.random() - 0.5) * 4).toFixed(2));
-
-    setHoldings((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${symbol}`,
-        symbol,
-        shares,
-        avgCost,
-        price,
-        changePercent,
-      },
-    ]);
-    setNewPosition({ symbol: "", shares: "", avgCost: "" });
-  };
-
   const removePosition = (id: string) => {
     setHoldings((prev) => prev.filter((h) => h.id !== id));
   };
@@ -101,14 +74,9 @@ const PortfolioSection = ({ userEmail, userToken }: PortfolioSectionProps) => {
   return (
     <Card className="glass-card border-white/10 animate-slide-up">
       <CardHeader>
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <CardTitle>Portfolio Snapshot</CardTitle>
-            <CardDescription>Track holdings, P/L, and daily moves</CardDescription>
-          </div>
-          <Badge variant="outline" className="text-xs">
-            Synced
-          </Badge>
+        <div>
+          <CardTitle>Portfolio Snapshot</CardTitle>
+          <CardDescription>Track holdings, P/L, and daily moves</CardDescription>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -136,95 +104,59 @@ const PortfolioSection = ({ userEmail, userToken }: PortfolioSectionProps) => {
           />
         </div>
 
-        <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr] items-start">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">Holdings</h3>
-              <span className="text-xs text-muted-foreground">Saved to your account</span>
-            </div>
-            <div className="overflow-hidden rounded-lg border border-white/5">
-              <table className="min-w-full text-sm">
-                <thead className="bg-white/5 text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Symbol</th>
-                    <th className="px-3 py-2 text-right">Shares</th>
-                    <th className="px-3 py-2 text-right">Avg Cost</th>
-                    <th className="px-3 py-2 text-right">Price</th>
-                    <th className="px-3 py-2 text-right">P/L</th>
-                    <th className="px-3 py-2 text-right">Day</th>
-                    <th className="px-3 py-2 text-right"> </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {holdings.map((h) => {
-                    const value = h.price * h.shares;
-                    const cost = h.avgCost * h.shares;
-                    const pnl = value - cost;
-                    const day = value * (h.changePercent / 100);
-                    return (
-                      <tr key={h.id} className="border-t border-white/5">
-                        <td className="px-3 py-2 font-semibold">{h.symbol}</td>
-                        <td className="px-3 py-2 text-right">{h.shares}</td>
-                        <td className="px-3 py-2 text-right">${h.avgCost.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right">${h.price.toFixed(2)}</td>
-                        <td className={cn("px-3 py-2 text-right", valueColor(pnl))}>
-                          {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
-                        </td>
-                        <td className={cn("px-3 py-2 text-right", valueColor(day))}>
-                          {day >= 0 ? "+" : ""}${day.toFixed(2)} ({h.changePercent >= 0 ? "+" : ""}{h.changePercent.toFixed(2)}%)
-                        </td>
-                        <td className="px-2 py-2 text-right">
-                          <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={() => removePosition(h.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {holdings.length === 0 && (
-                    <tr>
-                      <td className="px-3 py-4 text-center text-muted-foreground" colSpan={7}>
-                        No positions yet. Add your first holding.
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">Holdings</h3>
+            <span className="text-xs text-muted-foreground">Saved to your account</span>
+          </div>
+          <div className="overflow-hidden rounded-lg border border-white/5">
+            <table className="min-w-full text-sm">
+              <thead className="bg-white/5 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left">Symbol</th>
+                  <th className="px-3 py-2 text-right">Shares</th>
+                  <th className="px-3 py-2 text-right">Avg Cost</th>
+                  <th className="px-3 py-2 text-right">Price</th>
+                  <th className="px-3 py-2 text-right">P/L</th>
+                  <th className="px-3 py-2 text-right">Day</th>
+                  <th className="px-3 py-2 text-right"> </th>
+                </tr>
+              </thead>
+              <tbody>
+                {holdings.map((h) => {
+                  const value = h.price * h.shares;
+                  const cost = h.avgCost * h.shares;
+                  const pnl = value - cost;
+                  const day = value * (h.changePercent / 100);
+                  return (
+                    <tr key={h.id} className="border-t border-white/5">
+                      <td className="px-3 py-2 font-semibold">{h.symbol}</td>
+                      <td className="px-3 py-2 text-right">{h.shares}</td>
+                      <td className="px-3 py-2 text-right">${h.avgCost.toFixed(2)}</td>
+                      <td className="px-3 py-2 text-right">${h.price.toFixed(2)}</td>
+                      <td className={cn("px-3 py-2 text-right", valueColor(pnl))}>
+                        {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
+                      </td>
+                      <td className={cn("px-3 py-2 text-right", valueColor(day))}>
+                        {day >= 0 ? "+" : ""}${day.toFixed(2)} ({h.changePercent >= 0 ? "+" : ""}{h.changePercent.toFixed(2)}%)
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={() => removePosition(h.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </td>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="glass-card border-white/10 p-4 space-y-4">
-            <div className="flex items-center gap-2">
-              <Plus className="h-4 w-4 text-primary" />
-              <h3 className="font-semibold">Add position</h3>
-            </div>
-            <div className="space-y-3">
-              <Input
-                placeholder="Ticker (e.g., MSFT)"
-                value={newPosition.symbol}
-                onChange={(e) => setNewPosition({ ...newPosition, symbol: e.target.value })}
-                className="glass-card border-white/20"
-              />
-              <Input
-                placeholder="Shares"
-                type="number"
-                min="0"
-                value={newPosition.shares}
-                onChange={(e) => setNewPosition({ ...newPosition, shares: e.target.value })}
-                className="glass-card border-white/20"
-              />
-              <Input
-                placeholder="Average cost ($)"
-                type="number"
-                min="0"
-                value={newPosition.avgCost}
-                onChange={(e) => setNewPosition({ ...newPosition, avgCost: e.target.value })}
-                className="glass-card border-white/20"
-              />
-              <Button variant="gradient" className="w-full" onClick={addPosition}>
-                Add to portfolio
-              </Button>
-            </div>
+                  );
+                })}
+                {holdings.length === 0 && (
+                  <tr>
+                    <td className="px-3 py-4 text-center text-muted-foreground" colSpan={7}>
+                      No positions yet. Use the Portfolio page to add holdings.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </CardContent>

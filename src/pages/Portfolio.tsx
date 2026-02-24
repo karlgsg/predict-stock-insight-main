@@ -4,38 +4,28 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowUpRight, ArrowDownRight, PieChart, TrendingUp, Shield, Bell } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Link } from "react-router-dom";
 import { loadPortfolio, savePortfolio, type PortfolioPosition } from "@/lib/portfolio-store";
+import { fetchSupportedSymbols, fetchSymbols, type SymbolResult } from "@/lib/symbols";
 import { useAuth } from "@/context/AuthContext";
 
-const recentActivity = [
-  { type: "Buy", symbol: "NVDA", amount: "$3,500", time: "Today" },
-  { type: "Sell", symbol: "TSLA", amount: "$1,200", time: "Yesterday" },
-  { type: "Rebalance", symbol: "Portfolio", amount: "$5,000", time: "2 days ago" },
-];
-
-const riskColor = (risk: PortfolioPosition["risk"]) => {
-  switch (risk) {
-    case "Low":
-      return "text-green-400";
-    case "Medium":
-      return "text-yellow-300";
-    case "High":
-      return "text-red-400";
-    default:
-      return "text-slate-300";
-  }
-};
+const initialActivity: Array<{ type: string; symbol: string; amount: string; time: string }> = [];
 
 const Portfolio = () => {
   const { user } = useAuth();
   const userEmail = user?.email;
   const [positions, setPositions] = useState<PortfolioPosition[]>([]);
-  const [activity, setActivity] = useState(recentActivity);
+  const [activity, setActivity] = useState(initialActivity);
+  const [supportedSet, setSupportedSet] = useState<Set<string>>(new Set());
+  const [showAiOnly, setShowAiOnly] = useState(false);
+  const [symbolSuggestions, setSymbolSuggestions] = useState<SymbolResult[]>([]);
+  const [showSymbolSuggestions, setShowSymbolSuggestions] = useState(false);
+  const [symbolFocused, setSymbolFocused] = useState(false);
+  const [selectedSymbol, setSelectedSymbol] = useState<SymbolResult | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState<PortfolioPosition>({
     symbol: "",
     name: "",
@@ -43,7 +33,6 @@ const Portfolio = () => {
     price: 0,
     changePct: 0,
     costBasis: 0,
-    risk: "Medium",
   });
 
   useEffect(() => {
@@ -62,11 +51,61 @@ const Portfolio = () => {
     void savePortfolio(userEmail, positions, user?.token);
   }, [positions, userEmail, user?.token]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const symbols = await fetchSupportedSymbols();
+        if (!cancelled) {
+          setSupportedSet(new Set(symbols.map((s) => s.toUpperCase())));
+        }
+      } catch {
+        if (!cancelled) setSupportedSet(new Set());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!symbolFocused) return;
+    const query = form.symbol.trim();
+    if (!query) {
+      setSymbolSuggestions([]);
+      setShowSymbolSuggestions(false);
+      return;
+    }
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        const results = await fetchSymbols(query, 8, false);
+        setSymbolSuggestions(results);
+        setShowSymbolSuggestions(results.length > 0);
+      } catch {
+        setSymbolSuggestions([]);
+        setShowSymbolSuggestions(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timeout);
+  }, [form.symbol, symbolFocused]);
+
   const totalValue = useMemo(() => positions.reduce((sum, p) => sum + p.price * p.shares, 0), [positions]);
   const totalCost = useMemo(() => positions.reduce((sum, p) => sum + p.costBasis * p.shares, 0), [positions]);
-  const totalReturnPct = ((totalValue - totalCost) / totalCost) * 100;
+  const totalReturnPct = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0;
+  const dayChange = useMemo(
+    () => positions.reduce((sum, p) => sum + p.price * p.shares * ((p.changePct || 0) / 100), 0),
+    [positions]
+  );
+  const dayChangePct = totalValue > 0 ? (dayChange / totalValue) * 100 : 0;
 
-  const allocationBars = positions.map((p) => {
+  const displayedPositions = useMemo(() => {
+    if (!showAiOnly) return positions;
+    return positions.filter((p) => supportedSet.has(p.symbol.toUpperCase()));
+  }, [positions, showAiOnly, supportedSet]);
+
+  const allocationBars = displayedPositions.map((p) => {
     const value = p.price * p.shares;
     const pct = totalValue ? (value / totalValue) * 100 : 0;
     return { label: p.symbol, value: pct };
@@ -74,14 +113,60 @@ const Portfolio = () => {
 
   const handleAddPosition = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.symbol || !form.name || form.shares <= 0 || form.price <= 0 || form.costBasis <= 0) return;
-    const newPos: PortfolioPosition = {
-      ...form,
-      symbol: form.symbol.toUpperCase(),
-    };
-    setPositions((prev) => [...prev, newPos]);
-    setActivity((prev) => [{ type: "Buy", symbol: newPos.symbol, amount: `$${(newPos.price * newPos.shares).toFixed(0)}`, time: "Just now" }, ...prev].slice(0, 6));
-    setForm({ symbol: "", name: "", shares: 0, price: 0, changePct: 0, costBasis: 0, risk: "Medium" });
+    setFormError(null);
+    void (async () => {
+      if (!form.symbol || form.shares <= 0 || form.price <= 0) return;
+
+      const targetSymbol = form.symbol.trim().toUpperCase();
+      let resolvedSymbol: SymbolResult | null = null;
+      if (selectedSymbol && selectedSymbol.symbol.toUpperCase() === targetSymbol) {
+        resolvedSymbol = selectedSymbol;
+      } else {
+        const found = await fetchSymbols(targetSymbol, 10, false);
+        resolvedSymbol = found.find((s) => s.symbol.toUpperCase() === targetSymbol) ?? null;
+      }
+
+      if (!resolvedSymbol) {
+        setFormError("Select a valid symbol from suggestions.");
+        return;
+      }
+
+      setPositions((prev) => {
+        const idx = prev.findIndex((p) => p.symbol.toUpperCase() === targetSymbol);
+        if (idx === -1) {
+          const newPos: PortfolioPosition = {
+            ...form,
+            symbol: targetSymbol,
+            name: resolvedSymbol.name,
+            costBasis: form.price,
+          };
+          return [...prev, newPos];
+        }
+
+        const existing = prev[idx];
+        const newShares = existing.shares + form.shares;
+        const weightedCostBasis =
+          (existing.costBasis * existing.shares + form.price * form.shares) / newShares;
+
+        const merged: PortfolioPosition = {
+          ...existing,
+          symbol: targetSymbol,
+          name: resolvedSymbol.name,
+          shares: Number(newShares.toFixed(6)),
+          price: form.price,
+          costBasis: Number(weightedCostBasis.toFixed(6)),
+        };
+
+        const next = [...prev];
+        next[idx] = merged;
+        return next;
+      });
+      setActivity((prev) => [{ type: "Buy", symbol: targetSymbol, amount: `$${(form.price * form.shares).toFixed(0)}`, time: "Just now" }, ...prev].slice(0, 6));
+      setSelectedSymbol(null);
+      setSymbolSuggestions([]);
+      setShowSymbolSuggestions(false);
+      setForm({ symbol: "", name: "", shares: 0, price: 0, changePct: 0, costBasis: 0 });
+    })();
   };
 
   const handleRemove = (symbol: string) => {
@@ -104,14 +189,6 @@ const Portfolio = () => {
                 Home
               </Button>
             </Link>
-            <Button variant="outline" className="border-blue-400 text-blue-200">
-              <PieChart className="w-4 h-4 mr-2" />
-              Rebalance (soon)
-            </Button>
-            <Button variant="gradient">
-              <Bell className="w-4 h-4 mr-2" />
-              Create alert
-            </Button>
           </div>
         </div>
 
@@ -133,35 +210,28 @@ const Portfolio = () => {
           <Card className="bg-white/5 border-white/10">
             <CardHeader>
               <CardTitle>Daily change</CardTitle>
-              <CardDescription>Mock intraday move</CardDescription>
+              <CardDescription>Based on position daily % values</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              <p className="text-3xl font-bold text-green-300">+1.2%</p>
-              <p className="text-sm text-slate-300">+$4,280 today</p>
+              <p className={`text-3xl font-bold ${dayChange >= 0 ? "text-green-300" : "text-red-300"}`}>
+                {dayChangePct >= 0 ? "+" : ""}{dayChangePct.toFixed(2)}%
+              </p>
+              <p className="text-sm text-slate-300">
+                {dayChange >= 0 ? "+" : ""}${dayChange.toFixed(2)} today
+              </p>
             </CardContent>
           </Card>
 
           <Card className="bg-white/5 border-white/10">
             <CardHeader>
-              <CardTitle>Risk mix</CardTitle>
-              <CardDescription>Allocation by risk tier</CardDescription>
+              <CardTitle>Positions</CardTitle>
+              <CardDescription>Total active holdings</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span>Low</span>
-                <span className="text-green-300">46%</span>
-              </div>
-              <Progress value={46} />
-              <div className="flex items-center justify-between text-sm">
-                <span>Medium</span>
-                <span className="text-yellow-300">32%</span>
-              </div>
-              <Progress value={32} />
-              <div className="flex items-center justify-between text-sm">
-                <span>High</span>
-                <span className="text-red-300">22%</span>
-              </div>
-              <Progress value={22} />
+              <p className="text-3xl font-bold">{positions.length}</p>
+              <p className="text-sm text-slate-300">
+                {positions.length === 1 ? "1 holding tracked" : `${positions.length} holdings tracked`}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -169,7 +239,23 @@ const Portfolio = () => {
         <Card className="bg-white/5 border-white/10">
           <CardHeader>
             <CardTitle>Holdings</CardTitle>
-            <CardDescription>Allocation, P&L, and risk</CardDescription>
+            <CardDescription>Allocation and P/L</CardDescription>
+            <div className="flex gap-2">
+              <Button
+                variant={showAiOnly ? "outline" : "gradient"}
+                size="sm"
+                onClick={() => setShowAiOnly(false)}
+              >
+                All
+              </Button>
+              <Button
+                variant={showAiOnly ? "gradient" : "outline"}
+                size="sm"
+                onClick={() => setShowAiOnly(true)}
+              >
+                AI Supported
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <Table>
@@ -181,17 +267,18 @@ const Portfolio = () => {
                   <TableHead>Price</TableHead>
                   <TableHead>P/L</TableHead>
                   <TableHead>Allocation</TableHead>
-                  <TableHead>Risk</TableHead>
+                  <TableHead>AI</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {positions.map((p) => {
+                {displayedPositions.map((p) => {
                   const value = p.price * p.shares;
                   const cost = p.costBasis * p.shares;
                   const pl = value - cost;
                   const plPct = ((value - cost) / cost) * 100;
                   const allocationPct = totalValue ? (value / totalValue) * 100 : 0;
+                  const aiSupported = supportedSet.has(p.symbol.toUpperCase());
                   return (
                     <TableRow key={p.symbol}>
                       <TableCell className="font-semibold">{p.symbol}</TableCell>
@@ -203,7 +290,17 @@ const Portfolio = () => {
                         ${pl.toFixed(0)} ({plPct.toFixed(1)}%)
                       </TableCell>
                       <TableCell>{allocationPct.toFixed(1)}%</TableCell>
-                      <TableCell className={riskColor(p.risk)}>{p.risk}</TableCell>
+                      <TableCell>
+                        {aiSupported ? (
+                          <Badge variant="outline" className="border-green-400 text-green-300">
+                            AI Supported
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-slate-500 text-slate-300">
+                            Tracking only
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" onClick={() => handleRemove(p.symbol)}>
                           Remove
@@ -212,6 +309,13 @@ const Portfolio = () => {
                     </TableRow>
                   );
                 })}
+                {displayedPositions.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-slate-400 py-6">
+                      No positions in this filter.
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent>
@@ -242,7 +346,7 @@ const Portfolio = () => {
               <CardDescription>Latest moves</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {recentActivity.map((a, i) => (
+              {activity.map((a, i) => (
                 <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
                   <div>
                     <p className="font-semibold">{a.type}</p>
@@ -254,6 +358,9 @@ const Portfolio = () => {
                   </div>
                 </div>
               ))}
+              {activity.length === 0 && (
+                <p className="text-sm text-slate-400">No recent actions yet.</p>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -261,7 +368,7 @@ const Portfolio = () => {
         <Card className="bg-white/5 border-white/10">
           <CardHeader>
             <CardTitle>Edit portfolio</CardTitle>
-            <CardDescription>Add or remove positions</CardDescription>
+            <CardDescription>Add buy trades (cost basis auto-calculated)</CardDescription>
           </CardHeader>
           <CardContent>
             <form className="grid md:grid-cols-3 gap-4 mb-4" onSubmit={handleAddPosition}>
@@ -270,19 +377,52 @@ const Portfolio = () => {
                 <Input
                   id="symbol"
                   value={form.symbol}
-                  onChange={(e) => setForm({ ...form, symbol: e.target.value.toUpperCase() })}
+                  onChange={(e) => {
+                    setSelectedSymbol(null);
+                    setFormError(null);
+                    setForm({ ...form, symbol: e.target.value.toUpperCase() });
+                  }}
+                  onFocus={() => {
+                    setSymbolFocused(true);
+                    if (symbolSuggestions.length > 0) setShowSymbolSuggestions(true);
+                  }}
+                  onBlur={() => {
+                    setTimeout(() => {
+                      setSymbolFocused(false);
+                      setShowSymbolSuggestions(false);
+                    }, 120);
+                  }}
                   placeholder="AAPL"
                   required
                 />
+                {showSymbolSuggestions && symbolSuggestions.length > 0 && (
+                  <div className="rounded-md border border-white/10 bg-slate-900 max-h-56 overflow-auto">
+                    {symbolSuggestions.map((s) => (
+                      <button
+                        key={s.symbol}
+                        type="button"
+                        className="w-full text-left px-3 py-2 hover:bg-white/10"
+                        onClick={() => {
+                          setSelectedSymbol(s);
+                          setFormError(null);
+                          setForm((prev) => ({ ...prev, symbol: s.symbol, name: s.name }));
+                          setShowSymbolSuggestions(false);
+                        }}
+                      >
+                        <span className="font-semibold">{s.symbol}</span>
+                        <span className="ml-2 text-sm text-slate-300">{s.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="name">Name</Label>
                 <Input
                   id="name"
                   value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Apple Inc."
-                  required
+                  readOnly
+                  placeholder="Auto-filled from symbol"
                 />
               </div>
               <div className="space-y-2">
@@ -292,8 +432,10 @@ const Portfolio = () => {
                   type="number"
                   min="0"
                   step="1"
-                  value={form.shares}
-                  onChange={(e) => setForm({ ...form, shares: Number(e.target.value) })}
+                  value={form.shares === 0 ? "" : form.shares}
+                  onChange={(e) =>
+                    setForm({ ...form, shares: e.target.value === "" ? 0 : Number(e.target.value) })
+                  }
                   required
                 />
               </div>
@@ -304,73 +446,37 @@ const Portfolio = () => {
                   type="number"
                   min="0"
                   step="0.01"
-                  value={form.price}
-                  onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
+                  value={form.price === 0 ? "" : form.price}
+                  onChange={(e) =>
+                    setForm({ ...form, price: e.target.value === "" ? 0 : Number(e.target.value) })
+                  }
                   required
                 />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="costBasis">Cost basis</Label>
-                <Input
-                  id="costBasis"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.costBasis}
-                  onChange={(e) => setForm({ ...form, costBasis: Number(e.target.value) })}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Risk</Label>
-                <Select
-                  value={form.risk}
-                  onValueChange={(v) => setForm({ ...form, risk: v as PortfolioPosition["risk"] })}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select risk" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Low">Low</SelectItem>
-                    <SelectItem value="Medium">Medium</SelectItem>
-                    <SelectItem value="High">High</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
               <div className="md:col-span-3 flex gap-3">
-                <Button type="submit" variant="gradient">Add position</Button>
+                <Button type="submit" variant="gradient">Add buy trade</Button>
                 <Button
                   type="button"
                   variant="outline"
                   className="border-white/30 text-white"
-                  onClick={() =>
-                    setForm({ symbol: "", name: "", shares: 0, price: 0, changePct: 0, costBasis: 0, risk: "Medium" })
-                  }
+                  onClick={() => {
+                    setSelectedSymbol(null);
+                    setSymbolSuggestions([]);
+                    setShowSymbolSuggestions(false);
+                    setFormError(null);
+                    setForm({ symbol: "", name: "", shares: 0, price: 0, changePct: 0, costBasis: 0 });
+                  }}
                 >
                   Clear
                 </Button>
               </div>
+              {formError && (
+                <p className="md:col-span-3 text-sm text-red-300">{formError}</p>
+              )}
             </form>
           </CardContent>
         </Card>
 
-        <Card className="bg-white/5 border-white/10">
-          <CardHeader>
-            <CardTitle>Next steps</CardTitle>
-            <CardDescription>Bring portfolio actions into the app</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
-            <Badge variant="outline" className="border-blue-400 text-blue-200 bg-blue-400/10 flex items-center gap-1">
-              <TrendingUp className="w-4 h-4" /> Connect brokerage (coming soon)
-            </Badge>
-            <Badge variant="outline" className="border-green-400 text-green-200 bg-green-400/10 flex items-center gap-1">
-              <Shield className="w-4 h-4" /> Risk alerts
-            </Badge>
-            <Badge variant="outline" className="border-yellow-300 text-yellow-100 bg-yellow-300/10 flex items-center gap-1">
-              <Bell className="w-4 h-4" /> Price targets
-            </Badge>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

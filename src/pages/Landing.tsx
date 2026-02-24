@@ -50,11 +50,6 @@ const Landing = () => {
               <Link to="/app">
                 <Button size="lg" variant="gradient">Start free</Button>
               </Link>
-              <a href="#demo" className="inline-block">
-                <Button size="lg" variant="outline" className="border-blue-400 text-blue-200">
-                  Demo 
-                </Button>
-              </a>
             </div>
             <div className="flex flex-wrap gap-3 text-sm text-slate-300">
               <span>Real-time autocomplete</span>
@@ -119,11 +114,6 @@ const Landing = () => {
               <Link to="/app">
                 <Button size="lg" variant="gradient">Start free</Button>
               </Link>
-              <a href="#demo" className="inline-block">
-                <Button size="lg" variant="outline" className="border-blue-400 text-blue-200">
-                  View sample signals
-                </Button>
-              </a>
             </div>
           </div>
         </section>

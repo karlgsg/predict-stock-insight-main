@@ -97,7 +97,13 @@ cd ..
 docker compose -f docker-compose.deploy.yml up --build -d
 ```
 
-5. Verify health:
+5. Apply DB migrations:
+```bash
+cd server
+npm run migrate:deploy
+```
+
+6. Verify health:
 ```bash
 curl http://127.0.0.1:8002/health
 curl http://127.0.0.1:8001/health

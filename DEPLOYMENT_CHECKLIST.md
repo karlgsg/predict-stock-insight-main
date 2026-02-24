@@ -16,6 +16,7 @@
 
 ## Build and run
 - [ ] `docker compose -f docker-compose.deploy.yml up --build -d` succeeds
+- [ ] `cd server && npm run migrate:deploy` succeeds
 - [ ] `curl http://127.0.0.1:8002/health` returns `ok`
 - [ ] `curl http://127.0.0.1:8001/health` returns `ok`
 
