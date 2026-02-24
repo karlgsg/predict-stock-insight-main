@@ -67,6 +67,10 @@ class PredictResponse(BaseModel):
     confidence: Optional[float] = None
 
 
+class QuotesRequest(BaseModel):
+    symbols: list[str]
+
+
 def discover_supported_tickers() -> list[str]:
     if not BUNDLE_DIR.exists():
         return []
@@ -235,6 +239,29 @@ def run_model_inference(ticker: str) -> PredictResponse:
     )
 
 
+def fetch_quote(symbol: str) -> dict[str, float | str]:
+    hist = yf.Ticker(symbol).history(period="5d", auto_adjust=False)
+    if hist is None or hist.empty or "Close" not in hist.columns:
+        raise ValueError(f"No quote data for {symbol}")
+
+    closes = hist["Close"].dropna()
+    if closes.empty:
+        raise ValueError(f"No close data for {symbol}")
+
+    current_price = float(closes.iloc[-1])
+    prev_close = float(closes.iloc[-2]) if len(closes) >= 2 else current_price
+    if prev_close == 0:
+        change_pct = 0.0
+    else:
+        change_pct = ((current_price - prev_close) / prev_close) * 100.0
+
+    return {
+        "symbol": symbol,
+        "price": round(current_price, 4),
+        "changePct": round(change_pct, 4),
+    }
+
+
 @app.get("/health")
 def health():
     supported_tickers = discover_supported_tickers()
@@ -252,6 +279,23 @@ def supported_symbols(authorization: Optional[str] = Header(default=None)):
     check_auth(authorization)
     supported_tickers = discover_supported_tickers()
     return {"symbols": supported_tickers, "count": len(supported_tickers)}
+
+
+@app.post("/quotes")
+def quotes(payload: QuotesRequest, authorization: Optional[str] = Header(default=None)):
+    check_auth(authorization)
+    symbols = [str(s or "").strip().upper() for s in payload.symbols][:50]
+    symbols = [s for s in symbols if s]
+    if not symbols:
+        return {"quotes": []}
+
+    out = []
+    for symbol in symbols:
+        try:
+            out.append(fetch_quote(symbol))
+        except Exception:
+            continue
+    return {"quotes": out}
 
 
 @app.post("/predict", response_model=PredictResponse)

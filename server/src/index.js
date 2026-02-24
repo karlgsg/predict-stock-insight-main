@@ -204,6 +204,27 @@ async function fetchSupportedSymbols() {
   return normalized;
 }
 
+async function fetchQuotesFromMl(symbolsInput) {
+  const base = getMlBaseUrl();
+  if (!base) return [];
+  const symbols = [...new Set((symbolsInput || []).map((s) => String(s || "").toUpperCase()).filter(Boolean))].slice(0, 50);
+  if (symbols.length === 0) return [];
+
+  const response = await fetch(`${base}/quotes`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(ML_SERVICE_API_KEY ? { Authorization: `Bearer ${ML_SERVICE_API_KEY}` } : {}),
+    },
+    body: JSON.stringify({ symbols }),
+  });
+  if (!response.ok) {
+    throw new Error(`Quotes fetch failed (${response.status})`);
+  }
+  const payload = await response.json();
+  return Array.isArray(payload?.quotes) ? payload.quotes : [];
+}
+
 // In-memory user store: email -> { id, name, email, passwordHash }
 function signAccessToken(user) {
   return jwt.sign({ sub: user.id, email: user.email, name: user.name }, JWT_SECRET, {
@@ -455,6 +476,17 @@ app.delete("/portfolio/:symbol", authMiddleware, async (req, res) => {
     where: { userId, symbol },
   });
   return res.json({ ok: true });
+});
+
+app.post("/quotes", authMiddleware, async (req, res) => {
+  const symbols = Array.isArray(req.body?.symbols) ? req.body.symbols : [];
+  try {
+    const quotes = await fetchQuotesFromMl(symbols);
+    return res.json({ quotes });
+  } catch (err) {
+    console.warn("Unable to fetch quotes from ML service:", err?.message || err);
+    return res.status(502).json({ error: "Quotes service unavailable." });
+  }
 });
 
 app.get("/supported-symbols", async (_req, res) => {

@@ -29,6 +29,12 @@ export interface AuthResponse {
   refreshToken?: string;
 }
 
+export interface QuoteResponse {
+  symbol: string;
+  price: number;
+  changePct: number;
+}
+
 const API_URL = import.meta.env.VITE_API_URL;
 
 function getApiUrl() {
@@ -129,4 +135,24 @@ export async function refreshToken(refreshToken: string): Promise<AuthResponse> 
   }
 
   return response.json();
+}
+
+export async function fetchQuotes(symbols: string[], token?: string): Promise<QuoteResponse[]> {
+  const baseUrl = getApiUrl();
+  const response = await fetch(`${baseUrl}/quotes`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ symbols }),
+  });
+
+  if (!response.ok) {
+    const errorText = await readErrorMessage(response);
+    throw new ApiError(errorText, response.status, errorText);
+  }
+
+  const payload = (await response.json()) as { quotes?: QuoteResponse[] };
+  return Array.isArray(payload?.quotes) ? payload.quotes : [];
 }

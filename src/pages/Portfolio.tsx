@@ -8,6 +8,7 @@ import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link } from "react-router-dom";
+import { fetchQuotes, type QuoteResponse } from "@/lib/api";
 import { loadPortfolio, savePortfolio, type PortfolioPosition } from "@/lib/portfolio-store";
 import { fetchSupportedSymbols, fetchSymbols, type SymbolResult } from "@/lib/symbols";
 import { useAuth } from "@/context/AuthContext";
@@ -21,6 +22,10 @@ const Portfolio = () => {
   const [activity, setActivity] = useState(initialActivity);
   const [supportedSet, setSupportedSet] = useState<Set<string>>(new Set());
   const [showAiOnly, setShowAiOnly] = useState(false);
+  const [quotesBySymbol, setQuotesBySymbol] = useState<Record<string, QuoteResponse>>({});
+  const [quotesLoading, setQuotesLoading] = useState(false);
+  const [quotesError, setQuotesError] = useState<string | null>(null);
+  const [quotesUpdatedAt, setQuotesUpdatedAt] = useState<Date | null>(null);
   const [symbolSuggestions, setSymbolSuggestions] = useState<SymbolResult[]>([]);
   const [showSymbolSuggestions, setShowSymbolSuggestions] = useState(false);
   const [symbolFocused, setSymbolFocused] = useState(false);
@@ -69,6 +74,52 @@ const Portfolio = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    let intervalId: number | null = null;
+
+    const run = async () => {
+      if (!user?.token || positions.length === 0) {
+        if (!cancelled) {
+          setQuotesBySymbol({});
+          setQuotesLoading(false);
+          setQuotesError(null);
+        }
+        return;
+      }
+
+      if (!cancelled) setQuotesLoading(true);
+      try {
+        const symbols = positions.map((p) => p.symbol.toUpperCase());
+        const quotes = await fetchQuotes(symbols, user.token);
+        if (cancelled) return;
+        const next: Record<string, QuoteResponse> = {};
+        for (const q of quotes) {
+          next[q.symbol.toUpperCase()] = q;
+        }
+        setQuotesBySymbol(next);
+        setQuotesUpdatedAt(new Date());
+        setQuotesError(null);
+      } catch {
+        if (!cancelled) {
+          setQuotesError("Live quotes unavailable");
+        }
+      } finally {
+        if (!cancelled) setQuotesLoading(false);
+      }
+    };
+
+    void run();
+    intervalId = window.setInterval(() => {
+      void run();
+    }, 60_000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [positions, user?.token]);
+
+  useEffect(() => {
     if (!symbolFocused) return;
     const query = form.symbol.trim();
     if (!query) {
@@ -91,25 +142,51 @@ const Portfolio = () => {
     return () => clearTimeout(timeout);
   }, [form.symbol, symbolFocused]);
 
-  const totalValue = useMemo(() => positions.reduce((sum, p) => sum + p.price * p.shares, 0), [positions]);
-  const totalCost = useMemo(() => positions.reduce((sum, p) => sum + p.costBasis * p.shares, 0), [positions]);
+  const positionsWithLive = useMemo(
+    () =>
+      positions.map((p) => {
+        const live = quotesBySymbol[p.symbol.toUpperCase()];
+        return {
+          ...p,
+          price: live?.price ?? p.price,
+          changePct: live?.changePct ?? p.changePct,
+        };
+      }),
+    [positions, quotesBySymbol]
+  );
+
+  const totalValue = useMemo(
+    () => positionsWithLive.reduce((sum, p) => sum + p.price * p.shares, 0),
+    [positionsWithLive]
+  );
+  const totalCost = useMemo(
+    () => positionsWithLive.reduce((sum, p) => sum + p.costBasis * p.shares, 0),
+    [positionsWithLive]
+  );
   const totalReturnPct = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0;
   const dayChange = useMemo(
-    () => positions.reduce((sum, p) => sum + p.price * p.shares * ((p.changePct || 0) / 100), 0),
-    [positions]
+    () => positionsWithLive.reduce((sum, p) => sum + p.price * p.shares * ((p.changePct || 0) / 100), 0),
+    [positionsWithLive]
   );
   const dayChangePct = totalValue > 0 ? (dayChange / totalValue) * 100 : 0;
 
   const displayedPositions = useMemo(() => {
-    if (!showAiOnly) return positions;
-    return positions.filter((p) => supportedSet.has(p.symbol.toUpperCase()));
-  }, [positions, showAiOnly, supportedSet]);
+    if (!showAiOnly) return positionsWithLive;
+    return positionsWithLive.filter((p) => supportedSet.has(p.symbol.toUpperCase()));
+  }, [positionsWithLive, showAiOnly, supportedSet]);
 
   const allocationBars = displayedPositions.map((p) => {
     const value = p.price * p.shares;
     const pct = totalValue ? (value / totalValue) * 100 : 0;
     return { label: p.symbol, value: pct };
   });
+
+  const quoteStatus = useMemo(() => {
+    if (quotesLoading) return "Updating quotes...";
+    if (quotesError) return quotesError;
+    if (quotesUpdatedAt) return `Quotes updated ${quotesUpdatedAt.toLocaleTimeString()}`;
+    return "Quotes pending";
+  }, [quotesLoading, quotesError, quotesUpdatedAt]);
 
   const handleAddPosition = (e: React.FormEvent) => {
     e.preventDefault();
@@ -181,9 +258,12 @@ const Portfolio = () => {
           <div>
             <p className="text-sm text-blue-200">Portfolio overview</p>
             <h1 className="text-3xl font-bold">Your holdings at a glance</h1>
-            <p className="text-slate-300">Performance, allocation, and risk in one place.</p>
+            <p className="text-slate-300">Performance and allocation with live market quotes.</p>
           </div>
           <div className="flex gap-3">
+            <Badge variant="outline" className="border-blue-400 text-blue-200 bg-blue-400/10">
+              {quoteStatus}
+            </Badge>
             <Link to="/app">
               <Button variant="outline" className="border-white/30 text-white">
                 Home
@@ -200,9 +280,9 @@ const Portfolio = () => {
             </CardHeader>
             <CardContent className="space-y-2">
               <p className="text-3xl font-bold">${totalValue.toFixed(0)}</p>
-              <div className="flex items-center text-sm text-green-300">
+              <div className={`flex items-center text-sm ${totalReturnPct >= 0 ? "text-green-300" : "text-red-300"}`}>
                 <ArrowUpRight className="w-4 h-4 mr-1" />
-                +{totalReturnPct.toFixed(1)}% vs cost basis
+                {totalReturnPct >= 0 ? "+" : ""}{totalReturnPct.toFixed(1)}% vs cost basis
               </div>
             </CardContent>
           </Card>
@@ -210,7 +290,7 @@ const Portfolio = () => {
           <Card className="bg-white/5 border-white/10">
             <CardHeader>
               <CardTitle>Daily change</CardTitle>
-              <CardDescription>Based on position daily % values</CardDescription>
+              <CardDescription>Estimated from live quote vs previous close</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
               <p className={`text-3xl font-bold ${dayChange >= 0 ? "text-green-300" : "text-red-300"}`}>
@@ -265,6 +345,7 @@ const Portfolio = () => {
                   <TableHead>Name</TableHead>
                   <TableHead>Shares</TableHead>
                   <TableHead>Price</TableHead>
+                  <TableHead>Day</TableHead>
                   <TableHead>P/L</TableHead>
                   <TableHead>Allocation</TableHead>
                   <TableHead>AI</TableHead>
@@ -277,6 +358,7 @@ const Portfolio = () => {
                   const cost = p.costBasis * p.shares;
                   const pl = value - cost;
                   const plPct = ((value - cost) / cost) * 100;
+                  const day = value * ((p.changePct || 0) / 100);
                   const allocationPct = totalValue ? (value / totalValue) * 100 : 0;
                   const aiSupported = supportedSet.has(p.symbol.toUpperCase());
                   return (
@@ -285,6 +367,9 @@ const Portfolio = () => {
                       <TableCell className="text-slate-300">{p.name}</TableCell>
                       <TableCell>{p.shares}</TableCell>
                       <TableCell>${p.price.toFixed(2)}</TableCell>
+                      <TableCell className={day >= 0 ? "text-green-300" : "text-red-300"}>
+                        {day >= 0 ? "+" : ""}${day.toFixed(2)} ({p.changePct >= 0 ? "+" : ""}{p.changePct.toFixed(2)}%)
+                      </TableCell>
                       <TableCell className={pl >= 0 ? "text-green-300" : "text-red-300"}>
                         {pl >= 0 ? <ArrowUpRight className="inline w-4 h-4 mr-1" /> : <ArrowDownRight className="inline w-4 h-4 mr-1" />}
                         ${pl.toFixed(0)} ({plPct.toFixed(1)}%)
@@ -311,7 +396,7 @@ const Portfolio = () => {
                 })}
                 {displayedPositions.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-slate-400 py-6">
+                    <TableCell colSpan={9} className="text-center text-slate-400 py-6">
                       No positions in this filter.
                     </TableCell>
                   </TableRow>
